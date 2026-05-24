@@ -21,8 +21,19 @@ local player = { x = 0, y = 0, speed = 220 }
 local t = 0                  -- demo timer
 local found_t = nil          -- ellipse-drawing animation timer (nil = not active)
 
+-- Persistence demo: count how many times the engine has booted, persist
+-- the player's last position, show both in the welcome message. Press P
+-- during the game to save the current position immediately.
+local boot_count = opt_get("boot_count", 0) + 1
+opt_set("boot_count", boot_count)
+local saved = opt_get("last_pos", { x = 0, y = 0 })
+player.x, player.y = saved.x, saved.y
+opt_save()                   -- one save right at startup so find5.dat appears
+
 function on_start()
-    ui_show_message("WASD/arrows move. Space = fade. F = find anim.", 5)
+    ui_show_message(
+        string.format("Boot #%d. Last pos: (%.0f, %.0f). Press P to save now.",
+                      boot_count, saved.x, saved.y), 6)
     music_play("title", 0.5, true)
 end
 
@@ -77,6 +88,13 @@ end
 function on_keydown(name)
     if name == "space" then snd_play("jump") end
     if name == "f"     then found_t = 0 end       -- kick off ellipse animation
+    if name == "p" then
+        -- Save the current sprite position. Restart the game and it'll
+        -- come back where you left it.
+        opt_set("last_pos", { x = player.x, y = player.y })
+        opt_save()
+        ui_show_message(string.format("saved at (%.0f, %.0f)", player.x, player.y), 2)
+    end
 end
 
 function on_mousedown(x, y, button)
