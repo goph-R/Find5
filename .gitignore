@@ -1,0 +1,19 @@
+# Build output
+*.o
+*.exe
+find5
+build/
+raw/obj/
+
+# Temp/log files
+output.txt
+stdout.txt
+stderr.txt
+
+# Downloaded installers
+ms3d184setup.exe
+
+# Win10 build - portable MinGW (download separately, ~250MB)
+vendor_win10/mingw32/
+vendor_win10/SDL.dll
+libwinpthread-1.dll
