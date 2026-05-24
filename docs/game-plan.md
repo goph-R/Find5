@@ -252,9 +252,9 @@ One save file `find5.dat` next to the exe. Holds a single Lua table:
 }
 ```
 
-Loaded on boot, written after any state change that matters (toggle sound, finish a run, change category). One save = one whole-table rewrite — atomic enough for this scale (small file, infrequent writes), no need for journaling or partial updates.
+Loaded on boot (auto, by the engine), written after any state change that matters (toggle sound, finish a run, change category) via `opt_save()`. One save = one whole-table rewrite, atomic via write-to-tmp + rename — fine for this scale (small file, infrequent writes).
 
-**This requires a new engine binding** — `io` is sandboxed for safety, so Lua can't write files directly. See "File operations" at the bottom of this doc.
+The engine exposes a small **key-value options API** for this. Each `opt_get` carries its own default, so adding/removing/renaming options across versions never breaks an existing save file (orphan keys are ignored, new keys fall back to defaults). See "File operations" below.
 
 ## Data model
 
@@ -325,55 +325,81 @@ What we already have and what's landing alongside this plan:
 | `ui_show_message` | Has (optional) | Minor on-screen messages — could be replaced by `draw_text` |
 | `require "tween"` | Has | Tweening library for all animations |
 | `math.random` | Has (seeded) | Pick an image from the unused subset of a category's pool |
-| `save_state / load_state` | **Adding next** | Persist settings, highscores, used-image set |
+| `opt_set / opt_get / opt_save / opt_load` | Has | Persist settings, highscores, used-image set |
 
-Notably **not yet** in the engine and worth keeping in mind:
+Notably **not yet** in the engine:
 
-- **Save / load** — needed for settings, highscores, used-images state (see "File operations" below). One pair of bindings, no path arg.
 - **Rotation** on `draw_region`. Not needed for the spec above. Add when you want angled sprites.
 - **Particles** / batched effects. Not needed.
 
 ## File operations
 
-`io` and `os` are nilled by the engine's sandbox (so a buggy script can't `os.execute("rm -rf")` or open arbitrary paths). For Find5 we need exactly two operations: load the persistence table at boot, save the persistence table after state-changing actions. Recommended API — minimal, no path argument exposed:
+`io` and `os` are nilled by the engine's sandbox (so a buggy script can't `os.execute("rm -rf")` or open arbitrary paths). Find5 needs persistence for settings, highscores, and the used-images set per category — exposed as a small key-value options API:
 
 ```lua
-save_state(t)         -- serialize Lua table t to "find5.dat" next to the exe
-local t = load_state()  -- returns the table, or an empty table if file missing
+opt_set(name, value)       -- value: string | number | boolean | table
+                           -- pass nil to delete the option
+opt_get(name)              -- returns value, or nil
+opt_get(name, default)     -- returns default if unset (the forward-compat hook)
+opt_save()                 -- write all options to find5.dat (atomic via .tmp + rename)
+opt_load()                 -- re-read find5.dat into memory (auto-called at boot)
 ```
 
-**Implementation sketch** (~50 lines of C in `script.h`):
-- `save_state`: walk the table recursively, write a `return { ... }` text file via `fopen`/`fprintf` on the C side (which is *not* sandboxed). Supports nested tables, strings, numbers, booleans. Skips functions and userdata (they're not persistable anyway).
-- `load_state`: `luaL_loadfile("find5.dat")` + `lua_pcall` on the C side, bypassing the user-side `dofile`/`loadfile` ban. Returns the resulting table on the Lua stack.
+`opt_save` is **explicit** — call it after changes you want persisted. Batches naturally: set five things in a row, save once. `opt_load` is auto-called by the engine before `scripts/main.lua` runs, so options are ready by the time your `on_start` fires; you only need to call it manually to revert to last-saved state.
 
-No JSON parser needed — leaning on Lua's own evaluator is the smallest path.
+**Example usage** (suggests how Find5's game state maps onto it):
 
-**Safety notes**: 
-- The path is hardcoded (`find5.dat`), so scripts can't escape the working directory.
-- `load_state` runs the file as Lua code, but only the engine ever writes that file, so this is effectively trusted code. Still — a corrupted save file could crash the loader; wrap the pcall and fall back to empty table on error.
-- Single file, whole-table rewrite. Tiny (a few KB at most). No need for incremental updates or backup files.
+```lua
+-- Settings
+opt_set("sound_on",     true)
+opt_set("music_on",     true)
+opt_set("last_category", "portraits")
 
-**Random number generation** — already works. `math.random` in Lua 5.1 uses the C `rand()` under the hood, and `main.cpp` already calls `srand(time(NULL))` at boot. So image picking and any other RNG works without new bindings.
+-- Per-category highscores
+opt_set("hs_portraits",  { 5200, 4100, 3800 })
+opt_set("hs_landscapes", { 4800, 3600 })
+
+-- Per-category used-images set
+opt_set("used_portraits",  { p1 = true, p3 = true })
+
+opt_save()                                  -- commit to disk
+
+-- Reading with defaults — robust against schema changes:
+local sound = opt_get("sound_on", true)     -- new option in a future version?
+                                            -- default kicks in until first save.
+local hs   = opt_get("hs_portraits", {})
+```
+
+**Implementation** (in `script.h`):
+- Storage: one Lua table in the registry under `find5.opts`. `opt_set` / `opt_get` manipulate it directly — no marshalling per call.
+- `opt_save`: walks the table, writes `return { ... }` via `fopen`/`fprintf`. Handles strings (escaped), numbers, booleans, nested tables (with cycle / depth cap = 16). Array-shaped tables emit compact form `{ v1, v2, v3 }`. Functions/userdata/threads are skipped (they're not persistable anyway). Atomic via tmp file + rename.
+- `opt_load`: `luaL_loadfile("find5.dat")` + `lua_pcall` on the C side (bypassing the user-side `dofile`/`loadfile` ban). On error (missing / corrupt / not-a-table) the options reset to empty and a message goes to the log.
+
+**Safety notes**:
+- Path is hardcoded (`find5.dat`); scripts can't escape the working directory.
+- `opt_load` runs the file as Lua code, but only the engine writes that file — so it's effectively trusted code. Corruption falls back to empty options instead of crashing.
+- Single file, whole-table rewrite. Tiny (a few KB). No journaling needed.
+
+**Random number generation** — already works. `math.random` in Lua 5.1 uses the C `rand()` under the hood, and `main.cpp` calls `srand(time(NULL))` at boot. So image picking needs no new binding.
 
 ## Implementation roadmap
 
 Roughly in build order — each step is testable before moving to the next.
 
-1. **Engine adds (shipped)**: scale + alpha + options-table on `draw_region`; `draw_text`; `draw_ellipse`; UI canvas to 480.
-2. **`save_state` / `load_state` engine binding**: ~50 lines in `script.h`, see "File operations". Lands once because everything downstream needs it.
-3. **Background + portraits visible**: draw `bg` full-canvas, draw one hardcoded image pair at portrait positions. Static. No input.
-4. **Time bar + score/level labels**: `draw_region` with `fill_x` for the time bar; `draw_text` for the labels.
-5. **Difference hit-test**: click on portrait 1 → if within 25 units of any unfound difference, mark it found and trigger the ellipse animation.
-6. **Joker buttons**: 5 buttons stacked. Click reveals one unfound difference. On click: button scale-up + fade-out, empty slot fades in.
-7. **Level complete**: when remaining == 0 → LEVEL_COMPLETE state. Dialog scales/fades in. Score count-up animation.
-8. **Continue → next level** within a run (still one category, still one image pool).
-9. **Pause dialog**: Esc or pause button → PAUSED. Dim + dialog. Restart / Highscore / Exit.
-10. **Game over** (time-up): show dialog, Restart / Highscore.
-11. **Level config from data**: replace hardcoded numbers with `scripts/levels.lua` (single category for now).
-12. **Multi-category**: add the rest of the categories to `levels.lua`. Pick category programmatically at boot.
-13. **Title screen**: logo + category preview + arrows + sound/music toggles + START + highscore button. State machine entry point. Persists `last_category` via `save_state`.
-14. **Random image picking + used-images set**: pick from category's pool excluding `used_images[cat_id]`; reset when empty. Persist on each pick.
-15. **Highscore screen**: per-category top-N list, reachable from title and from post-game dialogs. Saving new scores triggered automatically on GAME_OVER / ALL_DONE.
-16. **Sound polish**: found / wrong / joker / tick / win SFX. Honor `settings.sound_on` / `settings.music_on` toggles.
+1. **Engine adds (shipped)**: scale + alpha + options-table on `draw_region`; `draw_text`; `draw_ellipse`; UI canvas to 480; `opt_set` / `opt_get` / `opt_save` / `opt_load`.
+2. **Background + portraits visible**: draw `bg` full-canvas, draw one hardcoded image pair at portrait positions. Static. No input.
+3. **Time bar + score/level labels**: `draw_region` with `fill_x` for the time bar; `draw_text` for the labels.
+4. **Difference hit-test**: click on portrait 1 → if within 25 units of any unfound difference, mark it found and trigger the ellipse animation.
+5. **Joker buttons**: 5 buttons stacked. Click reveals one unfound difference. On click: button scale-up + fade-out, empty slot fades in.
+6. **Level complete**: when remaining == 0 → LEVEL_COMPLETE state. Dialog scales/fades in. Score count-up animation.
+7. **Continue → next level** within a run (still one category, still one image pool).
+8. **Pause dialog**: Esc or pause button → PAUSED. Dim + dialog. Restart / Highscore / Exit.
+9. **Game over** (time-up): show dialog, Restart / Highscore.
+10. **Level config from data**: replace hardcoded numbers with `scripts/levels.lua` (single category for now).
+11. **Multi-category**: add the rest of the categories to `levels.lua`. Pick category programmatically at boot.
+12. **Title screen**: logo + category preview + arrows + sound/music toggles + START + highscore button. State machine entry point. Persists `last_category` via `opt_set` + `opt_save`.
+13. **Random image picking + used-images set**: pick from category's pool excluding `used_images[cat_id]`; reset when empty. Persist on each pick.
+14. **Highscore screen**: per-category top-N list, reachable from title and from post-game dialogs. Saving new scores triggered automatically on GAME_OVER / ALL_DONE.
+15. **Sound polish**: found / wrong / joker / tick / win SFX. Honor `settings.sound_on` / `settings.music_on` toggles.
 
 Each step is a couple of evenings of work. Suggest committing in order so you always have a runnable build.

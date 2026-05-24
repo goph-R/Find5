@@ -44,7 +44,7 @@ The whole engine is `main.cpp` plus header-only modules with `static` functions.
 - `sound.h` — OpenAL wrapper. `sndInit` opens the device, `sndLoadWav` reads a 16-bit PCM WAV, `SoundLibrary` is the named registry (groups of variants picked randomly), `sndPlay` fires on a free source.
 - `music.h` — Streaming Ogg Vorbis via stb_vorbis (compiled as its own C TU in `vorbis.o`). `MusicLibrary` is a name→path map; files open lazily on `musicPlay`. Crossfade-capable across 2 simultaneous tracks. Call `musicUpdate(&mus, dt)` once per frame.
 - `asset_registry.h` — name → path lookup for textures (and unused model slots inherited from SDLFun). `assets.lua` populates it via `scriptLoadAssets`.
-- `script.h` — Lua 5.1 glue. `ScriptSystem` holds the `lua_State` plus borrowed pointers to UiState/SoundSystem/SoundLibrary/MusicSystem/MusicLibrary/AssetRegistry/TexCache. Bindings exposed to Lua: `ui_show_message`, `snd_play`, `music_play`, `music_stop`, `music_volume`, `key_down`, `mouse_pos`, `mouse_down`, `draw_region`, `draw_text`, `draw_ellipse`. Lua globals set at init: `ALIGN_LEFT/CENTER/RIGHT/TOP/MIDDLE/BOTTOM`, `FLIP_H/FLIP_V`. `scriptLoadAssets` walks the manifest's `sounds` / `music` / `textures` / `fonts` / `regions` subtables and registers each. `scriptCall(s, "on_start")` invokes a nullary global Lua function if defined; `scriptCallUpdate` / `scriptCallKeyDown` / `scriptCallKeyUp` / `scriptCallMouseDown` / `scriptCallMouseUp` / `scriptCallMouseMove` / `scriptCallRender` call the corresponding `on_*` hooks. Missing hooks are no-ops. Two-phase `scriptBeginHook`/`scriptEndHook` is exposed for callers that need to push custom argument types. Reusable options-table helpers (`scr_optfield_num/int/str/color`) for any binding that wants `{ k = v }` style args.
+- `script.h` — Lua 5.1 glue. `ScriptSystem` holds the `lua_State` plus borrowed pointers to UiState/SoundSystem/SoundLibrary/MusicSystem/MusicLibrary/AssetRegistry/TexCache. Bindings exposed to Lua: `ui_show_message`, `snd_play`, `music_play`, `music_stop`, `music_volume`, `key_down`, `mouse_pos`, `mouse_down`, `draw_region`, `draw_text`, `draw_ellipse`, `opt_set`, `opt_get`, `opt_save`, `opt_load`. Lua globals set at init: `ALIGN_LEFT/CENTER/RIGHT/TOP/MIDDLE/BOTTOM`, `FLIP_H/FLIP_V`. `scriptLoadAssets` walks the manifest's `sounds` / `music` / `textures` / `fonts` / `regions` subtables and registers each. `scriptCall(s, "on_start")` invokes a nullary global Lua function if defined; `scriptCallUpdate` / `scriptCallKeyDown` / `scriptCallKeyUp` / `scriptCallMouseDown` / `scriptCallMouseUp` / `scriptCallMouseMove` / `scriptCallRender` call the corresponding `on_*` hooks. Missing hooks are no-ops. Two-phase `scriptBeginHook`/`scriptEndHook` is exposed for callers that need to push custom argument types. Reusable options-table helpers (`scr_optfield_num/int/str/color`) for any binding that wants `{ k = v }` style args. The options store auto-loads from `find5.dat` during `scriptInit` (see "Persistence" below).
 - `math.h` — Vec2/Vec3 type definitions. Engine-wide API boundary types.
 
 `main.cpp` defines `conLogf` as a printf wrapper near the top (forward-declared before any module include so headers can call it). This replaces SDLFun's dev-console scrollback — Find5's "console" is just stdout.
@@ -140,6 +140,22 @@ draw_ellipse(cx, cy, rx, ry, {
 ### Canvas size
 
 `UI_VIRTUAL_H = 480` for Find5 — matches the 4:3 / 640×480 game design target so one source pixel maps 1:1 to one virtual unit at the reference resolution. If you fork the engine for a different art scale, change that constant in `ui.h` (everything else in the renderer derives from it).
+
+### Persistence
+
+Key-value options store backed by a single file `find5.dat` next to the exe. `io` is sandboxed so scripts can't write files directly — this is the supported path.
+
+```lua
+opt_set("sound_on", true)            -- value can be string/number/boolean/table
+opt_set("hs_portraits", { 5200, 4100 })
+opt_save()                           -- explicit; call after batched changes
+
+local sound = opt_get("sound_on", true)   -- default applies if unset (forward-compat)
+```
+
+Auto-loaded by `scriptInit` before the entry script runs, so options are ready at `on_start`. `opt_load()` can be called manually to revert to last-saved state. Atomic save via write-to-tmp + rename. The serializer (`opt_writeValue` / `opt_writeTable` in `script.h`) handles nested tables, escapes strings, detects array-shaped tables for compact output, brackets non-identifier and Lua-keyword keys, and caps recursion depth at 16 to avoid cycles. Functions / userdata / threads / mixed-type keys are silently skipped — not persistable.
+
+The file format is `return { ... }` and is loaded via `luaL_loadfile` + `lua_pcall` on the C side (bypassing the user-side `dofile` ban). Corruption falls back to empty options with a log message; it never crashes.
 
 ## Constraints worth knowing before editing
 

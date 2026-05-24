@@ -446,6 +446,291 @@ static int scr_draw_ellipse(lua_State *L)
     return 0;
 }
 
+/* ---- Options / persistence ----
+ *
+ * Key-value store backed by a single file `find5.dat` next to the exe.
+ * Designed for forward compatibility: each opt_get carries its own default,
+ * so adding/removing/renaming options across versions never breaks an
+ * existing save file (orphan keys are quietly ignored, new keys fall back
+ * to defaults).
+ *
+ * Lua API:
+ *   opt_set(name, value)        value: string | number | boolean | table
+ *                               pass nil to delete
+ *   opt_get(name)               -> value, or nil
+ *   opt_get(name, default)      -> default if unset
+ *   opt_save()                  -> bool — writes find5.dat atomically
+ *   opt_load()                  -> bool — re-reads find5.dat into memory
+ *
+ * Internally the option store is one Lua table in the registry under
+ * "find5.opts". opt_load is called automatically at the end of scriptInit
+ * so options are ready before the entry script runs; you only need to
+ * call it manually if you want to revert to the last-saved state. */
+
+#define OPT_FILE        "find5.dat"
+#define OPT_FILE_TMP    "find5.dat.tmp"
+#define OPT_MAX_DEPTH   16
+
+/* Push the options table; create + register if it doesn't exist yet. */
+static void opt_pushTable(lua_State *L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, "find5.opts");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "find5.opts");
+    }
+}
+
+static int opt_isLuaKeyword(const char *s)
+{
+    static const char *kw[] = {
+        "and","break","do","else","elseif","end","false","for","function",
+        "if","in","local","nil","not","or","repeat","return","then","true",
+        "until","while", NULL
+    };
+    for (int i = 0; kw[i]; i++) if (strcmp(s, kw[i]) == 0) return 1;
+    return 0;
+}
+
+static int opt_isIdentifier(const char *s)
+{
+    if (!s || !*s) return 0;
+    char c = *s;
+    int letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    if (!letter) return 0;
+    for (const char *p = s + 1; *p; p++) {
+        c = *p;
+        int ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+              || (c >= '0' && c <= '9') || c == '_';
+        if (!ok) return 0;
+    }
+    return !opt_isLuaKeyword(s);
+}
+
+static void opt_writeString(FILE *f, const char *s)
+{
+    fputc('"', f);
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if      (c == '"')  fputs("\\\"", f);
+        else if (c == '\\') fputs("\\\\", f);
+        else if (c == '\n') fputs("\\n", f);
+        else if (c == '\r') fputs("\\r", f);
+        else if (c == '\t') fputs("\\t", f);
+        else if (c < 32)    fprintf(f, "\\%d", c);
+        else                fputc(c, f);
+    }
+    fputc('"', f);
+}
+
+/* Return 1 if the table at idx is an "array" (sequential integer keys 1..N
+   and nothing else). Used to emit compact { v1, v2, v3 } form instead of
+   verbose { [1]=v1, [2]=v2, [3]=v3 }. */
+static int opt_isArrayTable(lua_State *L, int idx)
+{
+    int len = (int)lua_objlen(L, idx);
+    if (len <= 0) return 0;
+    int count = 0;
+    lua_pushnil(L);
+    while (lua_next(L, idx) != 0) {
+        count++;
+        if (lua_type(L, -2) != LUA_TNUMBER) { lua_pop(L, 2); return 0; }
+        double n = lua_tonumber(L, -2);
+        if (n != (double)(int)n || (int)n < 1 || (int)n > len) {
+            lua_pop(L, 2);
+            return 0;
+        }
+        lua_pop(L, 1);
+    }
+    return count == len;
+}
+
+static void opt_writeValue(lua_State *L, FILE *f, int idx, int depth);
+
+static void opt_writeIndent(FILE *f, int depth)
+{
+    for (int i = 0; i < depth; i++) fputs("    ", f);
+}
+
+static void opt_writeTable(lua_State *L, FILE *f, int idx, int depth)
+{
+    if (depth > OPT_MAX_DEPTH) {
+        /* Cycle / too-deep — bail with nil. Won't produce nice output, but
+           won't crash or infinite-loop the serializer either. */
+        fputs("nil --[[ too deep ]]", f);
+        return;
+    }
+
+    /* Empty table compact form */
+    lua_pushnil(L);
+    if (lua_next(L, idx) == 0) { fputs("{}", f); return; }
+    lua_pop(L, 2);
+
+    int isArr = opt_isArrayTable(L, idx);
+
+    fputs("{\n", f);
+    if (isArr) {
+        int len = (int)lua_objlen(L, idx);
+        for (int i = 1; i <= len; i++) {
+            lua_rawgeti(L, idx, i);
+            opt_writeIndent(f, depth + 1);
+            opt_writeValue(L, f, lua_gettop(L), depth + 1);
+            fputs(",\n", f);
+            lua_pop(L, 1);
+        }
+    } else {
+        lua_pushnil(L);
+        while (lua_next(L, idx) != 0) {
+            int vt = lua_type(L, -1);
+            if (vt == LUA_TFUNCTION || vt == LUA_TUSERDATA ||
+                vt == LUA_TTHREAD   || vt == LUA_TLIGHTUSERDATA) {
+                lua_pop(L, 1);
+                continue;
+            }
+            int kt = lua_type(L, -2);
+            opt_writeIndent(f, depth + 1);
+            if (kt == LUA_TSTRING) {
+                const char *k = lua_tostring(L, -2);
+                if (opt_isIdentifier(k)) {
+                    fputs(k, f);
+                } else {
+                    fputc('[', f); opt_writeString(f, k); fputc(']', f);
+                }
+                fputs(" = ", f);
+            } else if (kt == LUA_TNUMBER) {
+                double n = lua_tonumber(L, -2);
+                if (n == (double)(long)n) fprintf(f, "[%ld] = ", (long)n);
+                else                      fprintf(f, "[%.17g] = ", n);
+            } else {
+                /* Unsupported key (table/bool/etc.) — skip silently. */
+                lua_pop(L, 1);
+                continue;
+            }
+            opt_writeValue(L, f, lua_gettop(L), depth + 1);
+            fputs(",\n", f);
+            lua_pop(L, 1);
+        }
+    }
+    opt_writeIndent(f, depth);
+    fputc('}', f);
+}
+
+static void opt_writeValue(lua_State *L, FILE *f, int idx, int depth)
+{
+    int t = lua_type(L, idx);
+    if (t == LUA_TSTRING) {
+        opt_writeString(f, lua_tostring(L, idx));
+    } else if (t == LUA_TNUMBER) {
+        double n = lua_tonumber(L, idx);
+        if (n == (double)(long)n) fprintf(f, "%ld", (long)n);
+        else                      fprintf(f, "%.17g", n);
+    } else if (t == LUA_TBOOLEAN) {
+        fputs(lua_toboolean(L, idx) ? "true" : "false", f);
+    } else if (t == LUA_TTABLE) {
+        opt_writeTable(L, f, idx, depth);
+    } else {
+        fputs("nil", f);
+    }
+}
+
+/* opt_set(name, value) */
+static int scr_opt_set(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    /* value (any type, including nil) is at index 2 */
+    opt_pushTable(L);              /* push opts */
+    lua_pushvalue(L, 2);           /* push value */
+    lua_setfield(L, -2, name);     /* opts[name] = value */
+    lua_pop(L, 1);                 /* pop opts */
+    return 0;
+}
+
+/* opt_get(name [, default]) */
+static int scr_opt_get(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    int hasDefault = (lua_gettop(L) >= 2);
+
+    opt_pushTable(L);                  /* push opts */
+    lua_getfield(L, -1, name);         /* push opts[name] */
+    if (lua_isnil(L, -1) && hasDefault) {
+        lua_pop(L, 1);                 /* pop nil */
+        lua_pushvalue(L, 2);           /* push default */
+    }
+    lua_remove(L, -2);                 /* drop opts table from beneath */
+    return 1;
+}
+
+/* opt_save() -> bool. Writes the options table to find5.dat. Returns
+   true on success, false (with conLogf message) on any failure. Atomic
+   via write-to-tmp + rename, so a partial write can't leave a corrupt
+   save file. */
+static int scr_opt_save(lua_State *L)
+{
+    FILE *f = fopen(OPT_FILE_TMP, "wb");
+    if (!f) {
+        conLogf("opt_save: cannot open %s for writing\n", OPT_FILE_TMP);
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    fputs("return ", f);
+    opt_pushTable(L);
+    opt_writeValue(L, f, lua_gettop(L), 0);
+    lua_pop(L, 1);
+    fputs("\n", f);
+    fclose(f);
+
+    /* Windows rename() fails if the target already exists; remove first. */
+    remove(OPT_FILE);
+    if (rename(OPT_FILE_TMP, OPT_FILE) != 0) {
+        conLogf("opt_save: rename %s -> %s failed\n", OPT_FILE_TMP, OPT_FILE);
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* Internal: load the options file (or reset to empty on missing/corrupt).
+   Used by both scr_opt_load and scriptInit. Returns 1 on success, 0 on
+   any failure — but the registry always ends up holding a usable table. */
+static int opt_loadInternal(lua_State *L)
+{
+    if (luaL_loadfile(L, OPT_FILE) != 0) {
+        /* File missing or unreadable — fine on first run. Quiet log. */
+        conLogf("opt_load: %s (starting with empty options)\n", lua_tostring(L, -1));
+        lua_pop(L, 1);
+        goto resetEmpty;
+    }
+    if (lua_pcall(L, 0, 1, 0) != 0) {
+        conLogf("opt_load: parse error: %s\n", lua_tostring(L, -1));
+        lua_pop(L, 1);
+        goto resetEmpty;
+    }
+    if (!lua_istable(L, -1)) {
+        conLogf("opt_load: file did not return a table\n");
+        lua_pop(L, 1);
+        goto resetEmpty;
+    }
+    lua_setfield(L, LUA_REGISTRYINDEX, "find5.opts");
+    return 1;
+
+resetEmpty:
+    lua_newtable(L);
+    lua_setfield(L, LUA_REGISTRYINDEX, "find5.opts");
+    return 0;
+}
+
+/* opt_load() -> bool. Re-reads find5.dat from disk into the options
+   table. Useful to revert in-memory edits to the last saved state. */
+static int scr_opt_load(lua_State *L)
+{
+    lua_pushboolean(L, opt_loadInternal(L));
+    return 1;
+}
+
 /* ---- Sandboxing ----
  * Default Lua opens os/io/package — a bad script could delete files or
  * load arbitrary DLLs via package.loadlib. Nil out the dangerous stuff,
@@ -524,6 +809,15 @@ static int scriptInit(ScriptSystem *s, UiState *ui, SoundSystem *snd,
     lua_register(s->L, "draw_region",     scr_draw_region);
     lua_register(s->L, "draw_text",       scr_draw_text);
     lua_register(s->L, "draw_ellipse",    scr_draw_ellipse);
+    lua_register(s->L, "opt_set",         scr_opt_set);
+    lua_register(s->L, "opt_get",         scr_opt_get);
+    lua_register(s->L, "opt_save",        scr_opt_save);
+    lua_register(s->L, "opt_load",        scr_opt_load);
+
+    /* Auto-load find5.dat on init so options are ready before the entry
+       script runs. Lua code can call opt_load() again later if it wants
+       to revert to last-saved state. */
+    opt_loadInternal(s->L);
 
     /* Align / flip constants exposed as Lua globals — see scr_draw_region
        for the bitfield layout. */
