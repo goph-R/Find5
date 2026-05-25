@@ -356,8 +356,8 @@ static int scr_draw_region(lua_State *L)
 /* draw_text(text, x, y)
  * draw_text(text, x, y, scale [, font])      -- positional, simple
  * draw_text(text, x, y, {
- *     scale = 2.0,                           -- line height = scale * 8 virtual px
- *     font  = "orbitron",                    -- name from assets.lua's fonts table
+ *     scale = 1.5,                           -- multiplier of native lineHeight; default 1.0
+ *     font  = "default",                     -- name from assets.lua's fonts table
  *     align = ALIGN_CENTER + ALIGN_MIDDLE,   -- anchors the text rect at (x, y)
  *     color = { 1, 1, 1 [, 1] },             -- RGB(A) tint
  *     alpha = 0.5,                           -- overrides color[4] if both given
@@ -375,18 +375,18 @@ static int scr_draw_text(lua_State *L)
     float x = (float)luaL_checknumber(L, 2);
     float y = (float)luaL_checknumber(L, 3);
 
-    float scale = 2.0f;
+    float scale = 1.0f;
     const char *font = NULL;
     int   align = 0;
     float cr = 1.0f, cg = 1.0f, cb = 1.0f, ca = 1.0f;
 
     if (lua_istable(L, 4)) {
-        scale = scr_optfield_num(L, 4, "scale", 2.0f);
+        scale = scr_optfield_num(L, 4, "scale", 1.0f);
         font  = scr_optfield_str(L, 4, "font", NULL);
         align = scr_optfield_int(L, 4, "align", 0);
         scr_optfield_color(L, 4, &cr, &cg, &cb, &ca);
     } else {
-        scale = (float)luaL_optnumber(L, 4, 2.0);
+        scale = (float)luaL_optnumber(L, 4, 1.0);
         font  = lua_isstring(L, 5) ? lua_tostring(L, 5) : NULL;
     }
 

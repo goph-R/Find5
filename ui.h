@@ -675,7 +675,7 @@ static void uiEllipse(float cx, float cy, float rx, float ry,
    `fontName` looks up a loaded BMFont (NULL → "default"). If no font is
    registered, the built-in 8x8 atlas is used as a fallback. */
 static void uiText(UiState *ui, float x, float y, UiColor c, const char *text,
-                   float scale = 3.0f,
+                   float scale = 1.0f,
                    int align = UI_ALIGN_TOP | UI_ALIGN_LEFT,
                    const char *fontName = NULL)
 {
@@ -805,7 +805,7 @@ static void uiDrawMessage(UiState *ui)
     /* Anchored ~25% from the top; centered horizontally. */
     float y = -uiGetHeight(ui) * 0.25f;
     uiText(ui, 0.0f, y, c, ui->msgText,
-           3.5f, UI_ALIGN_TOP | UI_ALIGN_CENTER);
+           1.0f, UI_ALIGN_TOP | UI_ALIGN_CENTER);
 }
 
 /* Horizontal progress bar: dark background, white border, colored fill.
