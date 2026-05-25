@@ -41,10 +41,12 @@ return {
 
         logo = { tex = "sprite", x = 0, y = 0, w = 256, h = 64 },
 
-        joker             = { tex = "game_ui", x = 1, y =  1, w = 40, h = 40 },
-        joker_empty       = { tex = "game_ui", x = 42, y =  1, w = 40, h = 40 },
+        star              = { tex = "game_ui", x = 1, y =  1, w = 40, h = 40 },
+        star_empty        = { tex = "game_ui", x = 42, y =  1, w = 40, h = 40 },
         pause_button_up   = { tex = "game_ui", x =  83, y = 1, w = 42, h = 42 },
         pause_button_down = { tex = "game_ui", x = 126, y = 1, w = 42, h = 42 },
+        joker_button_up   = { tex = "game_ui", x = 169, y = 1, w = 42, h = 42 },
+        joker_button_down = { tex = "game_ui", x = 212, y = 1, w = 42, h = 42 },
         timebar           = { tex = "game_ui", x = 1, y = 44, w = 264, h = 22 },
         timebar_bg        = { tex = "game_ui", x = 1, y = 67, w = 266, h = 24 },
         image_bg          = { tex = "game_ui", x = 1, y = 92, w = 287, h = 417 },
