@@ -49,40 +49,49 @@ Sound/music toggles are pure on/off — implementation: when sound is off, `snd_
 ```
   (-320, -240)                                                  (320, -240)
        ┌──────────────────────────────────────────────────────────┐
-       │  TOP ROW  (≈ 60 units tall)                              │
-       │  ┌──────┐ ┌──────┐ ┌────────────────┐ ┌──────┐  ┌─────┐  │
-       │  │SCORE │ │FOUND │ │ ════ TIME ══   │ │LEVEL │  │ ⏸  │  │
-       │  │ 4280 │ │ 2/5  │ │ (shrinks L→R)  │ │ 3/10 │  │ btn │  │
-       │  └──────┘ └──────┘ └────────────────┘ └──────┘  └─────┘  │
+       │ TOP ROW  (≈ 50 units tall)                               │
+       │ ┌─────┐  ┌─────┐                ┌─────┐         ┌─────┐  │
+       │ │LEVEL│  │FOUND│   ═══ TIME ══  │SCORE│         │ ⏸  │  │
+       │ │ 3/10│  │ 2/5 │  (shrinks L→R) │12345│         │ btn │  │
+       │ └─────┘  └─────┘                └─────┘         └─────┘  │
        │                                                          │
-       │  BOTTOM ROW  (≈ 400 units tall)                          │
-       │  ┌──────────────┐    ┌───┐     ┌──────────────┐          │
-       │  │              │    │ J │     │              │          │
-       │  │              │    ├───┤     │              │          │
-       │  │  PORTRAIT 1  │    │ J │     │  PORTRAIT 2  │          │
-       │  │              │    ├───┤     │              │          │
-       │  │              │    │ J │     │              │          │
-       │  └──────────────┘    ├───┤     └──────────────┘          │
-       │                      │ J │                               │
-       │                      ├───┤                               │
-       │                      │ J │                               │
-       │                      └───┘                               │
+       │ BOTTOM AREA  (≈ 400 units tall)                          │
+       │ ┌──────────────┐     ┌─┐     ┌──────────────┐            │
+       │ │              │     │★│     │              │            │
+       │ │              │     ├─┤     │              │            │
+       │ │  PORTRAIT 1  │     │★│     │  PORTRAIT 2  │            │
+       │ │              │     ├─┤     │              │            │
+       │ │              │     │☆│     │              │            │
+       │ │              │     ├─┤     │              │            │
+       │ │              │     │☆│     │              │            │
+       │ │              │     ├─┤     │              │            │
+       │ │              │     │☆│     │              │            │
+       │ └──────────────┘     └─┘     └──────────────┘            │
+       │                    ┌─────┐                               │
+       │                    │JOKER│   single button + remaining   │
+       │                    │  3  │   counter; click reveals one  │
+       │                    └─────┘   unfound diff (yellow)       │
        └──────────────────────────────────────────────────────────┘
   (-320, 240)                                                   (320, 240)
 ```
+
+Stars (`★` filled = `star`; `☆` outlined = `star_empty`) are a **progress indicator**, not buttons — one fills each time a difference is found, in order top-to-bottom. They sit dead-center between the two portraits.
+
+The single **JOKER button** lives below the star column, with the remaining-joker count beneath/inside it. Clicking it reveals one still-unfound difference with a yellow ellipse (vs. the green ellipse a player-click produces) and decrements the counter.
 
 **Rough coordinate budget** (top-left anchored, virtual units):
 
 | Element       | x range        | y range        | Notes                                  |
 |---------------|----------------|----------------|----------------------------------------|
-| Score label   | -300 .. -230   | -230 .. -200   | text, right-padded numeric             |
-| Found label   | -210 .. -150   | -230 .. -200   | "2/5" — differences found this level   |
-| Time bar      | -130 .. +130   | -225 .. -205   | uses `fill_x` to shrink                |
-| Level label   | +150 .. +220   | -230 .. -200   | "3/10" style                           |
-| Pause button  | +280 .. +310   | -230 .. -200   | 30×30 icon                             |
-| Portrait 1    | -310 .. -90    | -170 .. +220   | 220×390 (or whatever your art is)      |
-| Joker column  | -80 .. +80     | -170 .. +220   | 5 buttons stacked vertically           |
-| Portrait 2    | +90 .. +310    | -170 .. +220   | mirror of portrait 1                   |
+| Level label   | -300 .. -260   | -236 .. -200   | "3/10", current white / total muted    |
+| Found label   | -210 .. -170   | -236 .. -200   | "2/5" — differences found this level   |
+| Time bar      | -133 .. +133   | -224 .. -200   | uses `fill_x` to shrink (anchored L)   |
+| Score label   |  +180 .. +240  | -236 .. -200   | yellow numeric, large                  |
+| Pause button  |  +272 .. +314  | -232 .. -190   | 42×42 region                           |
+| Portrait 1    | -314 .. -29    | -183 .. +232   | 285×415 + 1px image_bg frame           |
+| Star column   |  -20 .. +20    | -183 .. +233   | 5 × 40px stacked + 8px gaps            |
+| Joker button  |  -21 .. +21    | +192 .. +234   | 42×42, beneath the stars               |
+| Portrait 2    |  +27 .. +312   | -183 .. +232   | mirror of portrait 1                   |
 
 Exact numbers can shift once the art is in; this is just the spatial intent.
 
@@ -105,10 +114,17 @@ return {
 
             -- Image pool — the player draws levels randomly from here. Each
             -- entry's `pair` resolves to texture regions `image_<pair>_a` and
-            -- `image_<pair>_b` (left & right portraits).
+            -- `image_<pair>_b` (left & right portraits). Each diff is a
+            -- rect in portrait-local coords: (x, y) top-left, (w, h) size.
+            -- Both hit-testing and the find ellipse derive from these rects
+            -- (ellipse cx, cy = x + w/2, y + h/2; rx, ry = w/2, h/2).
             images = {
-                { pair = "p1", diffs = { {x=-200, y=-100}, {x=-120, y= 20}, {x=-40, y=100}, {x=100, y=-50}, {x=180, y=150} } },
-                { pair = "p2", diffs = { ... } },
+                { pair = "1", diffs = {
+                    { x =  60, y = 120, w = 120, h = 40 },
+                    { x =  40, y =  30, w =  40, h = 60 },
+                    -- ... 5 entries per image
+                } },
+                { pair = "2", diffs = { ... } },
                 -- ... however many images you put in the pool. The pool can be
                 -- larger or smaller than level_count; if smaller, the used set
                 -- resets mid-run.
@@ -128,6 +144,19 @@ return {
 - Time per level: `lerp(time_start, time_end, level_idx / (level_count - 1))` — linear.
 - "5 differences" is a constant; diff count per image should be exactly 5 (or the game will silently consider the level complete after 5 finds regardless of how many were defined).
 - `level_count` is the same across categories, so leaderboards are comparable.
+
+**Per-run state** (lives in `main.lua`, not persisted):
+
+```lua
+state.found = {
+    { x = 60, y = 120, w = 120, h = 40, joker = false },  -- player click
+    { x = 40, y =  30, w =  40, h = 60, joker = true  },  -- joker reveal
+    -- appended in order; #state.found drives the star column (filled
+    -- slots = #found; the rest stay star_empty). joker = true makes
+    -- on_render draw a yellow ellipse instead of green for that entry.
+}
+state.jokers = 3    -- remaining; decremented on each successful joker press
+```
 
 **Image selection per level**: drawn randomly from the category's pool, skipping any pair listed in the persisted `used_images[category_id]` set (see "Persistence" below). If the unused subset is empty, clear the set and start over. Mark the chosen pair used immediately on selection (so quitting mid-level doesn't make the same image come back).
 
@@ -181,16 +210,16 @@ Held as a single `state` variable in `main.lua`. `on_update` dispatches by state
 
 All tweens live Lua-side. Drop in a small tween library via `require "tween"` (the sandbox already permits this — see `scripts/?.lua` lookup path).
 
-Found / joker / game-over reveal all reuse the same `draw_ellipse` "drawing" animation (`finish` tweened 0 → 1) — only the color changes, so the player learns the visual language quickly.
+Found / joker / game-over reveal all reuse the same `draw_ellipse` "drawing" animation (`finish` tweened 0 → 1) — only the color changes, so the player learns the visual language quickly. Once drawn, the find marker **stays on screen** for the rest of the level — green if it was a player click, yellow if a joker revealed it. The per-find `joker` flag (boolean stored alongside `x, y, w, h` in `state.found`) decides which color to draw on every subsequent frame.
 
 | Trigger                         | Animation                                                  | Duration |
 |---------------------------------|------------------------------------------------------------|----------|
-| Difference found (player click) | **Green** ellipse, `finish` 0 → 1, then fade out           | 0.4s + 0.7s fade |
+| Difference found (player click) | **Green** ellipse, `finish` 0 → 1; stays drawn after       | 0.4s draw |
+| Difference found                | Star at the next free slot in the column fills: `star_empty` → `star` (scale pop 1 → 1.3 → 1.0) | 0.25s |
 | Difference found                | Found counter bumps (e.g. 1/5 → 2/5), brief scale pop      | 0.2s     |
 | Difference found                | Optional fade-up score popup at the click point            | 0.6s     |
-| Joker pressed → reveals next    | **Yellow** ellipse on the auto-revealed difference         | 0.4s + 0.7s fade |
-| Joker button pressed            | Button: scale 1 → 1.3, alpha 1 → 0                         | 0.25s    |
-| Joker button pressed            | Empty-slot region underneath: alpha 0 → 1                  | 0.25s    |
+| Joker button pressed            | Button: `joker_button_up` → `joker_button_down` for 0.1s, then back; counter ticks down | 0.1s |
+| Joker reveals next unfound diff | **Yellow** ellipse, `finish` 0 → 1; stays drawn after; star fills too (same pop) | 0.4s draw |
 | Wrong click                     | Brief red flash on portrait (uiQuad with tweened alpha)    | 0.2s     |
 | Time low (last 10s) — audio     | `snd_play("tick")` once per second (tick / tock / tick…)   | each 1.0s |
 | Time low (last 10s) — visual    | Time bar fades out → in fast, **5 cycles over 10s** (one cycle every 2s; alpha 1 → 0.2 → 1, eased) | 2.0s × 5 |
@@ -219,14 +248,16 @@ The engine routes SDL events to Lua hooks; the game uses:
 
 - `on_mousedown(x, y, button)` — hit-test against:
   - Pause button rect (top-right)
-  - Joker buttons (5 stacked rects)
+  - Joker button rect (single button below the star column)
   - Portrait 1 rect (find-the-difference click)
   - Portrait 2 rect — wrong side, but valid click; treat as wrong-click
   - Dialog buttons when a dialog is up
 - `on_update(dt)` — tick the timer, advance active tweens, check for time-out and level-complete.
 - `on_keydown("escape")` — pause / unpause.
 
-Difference hit-test on portrait 1: the click is in canvas coords; subtract the portrait's origin to get a local position, then check against each difference's `{x, y}` (with a per-difference radius — call it 25 units). Mark found, kick off the ellipse animation, decrement remaining count.
+Difference hit-test on portrait 1: the click is in canvas coords; subtract the portrait's origin to get a local position, then check whether it falls inside any unfound difference's `{x, y, w, h}` rect. On hit: append `{ x, y, w, h, joker = false }` to `state.found`, kick off the green ellipse animation, fill the next progress star.
+
+Joker press: pick the first **unfound** difference (e.g. first in `state.diffs` that isn't already in `state.found`), append `{ x, y, w, h, joker = true }` to `state.found`, kick off the yellow ellipse animation, fill the next star, decrement `state.jokers`. No-op (or short blip) if `state.jokers == 0`.
 
 ## Dialogs
 
@@ -284,18 +315,24 @@ assets.lua
         category_1       = "assets/textures/category_1.png"   -- title-screen preview per cat
         category_2       = "assets/textures/category_2.png"
         ...
-        image_p1_a       = "assets/textures/image_p1_a.png"   -- portrait pairs per pool entry
-        image_p1_b       = "assets/textures/image_p1_b.png"
+        game_ui          = "assets/textures/game_ui.png"      -- HUD atlas (stars, buttons, bars, frame)
+        image_1a         = "assets/textures/image_1a.png"     -- portrait pairs per pool entry
+        image_1b         = "assets/textures/image_1b.png"     -- (PNG is POT-padded to 512×512, image is 285×415 top-left)
         ...
 
     regions:
-        bg               = { tex = "background", x=0,  y=0,   w=640, h=480 }
-        logo_small       = { tex = "sprites",    x=0,  y=0,   w=240, h=80  }
-        time_bar_fill    = { tex = "sprites",    x=0,  y=80,  w=320, h=20  }
-        time_bar_bg      = { tex = "sprites",    x=0,  y=100, w=320, h=20  }
-        joker_full       = { tex = "sprites",    x=0,  y=120, w=80,  h=70  }
-        joker_empty      = { tex = "sprites",    x=80, y=120, w=80,  h=70  }
-        pause_btn        = { tex = "sprites",    x=160,y=120, w=30,  h=30  }
+        bg                = { tex = "background", x=0,  y=0,   w=640, h=480 }
+        logo_small        = { tex = "sprites",    x=0,  y=0,   w=240, h=80  }
+        -- HUD (currently in game_ui.png; final atlas may merge into sprites)
+        star              = { tex = "game_ui",    x=1,   y=1,   w=40,  h=40  }  -- filled, progress
+        star_empty        = { tex = "game_ui",    x=42,  y=1,   w=40,  h=40  }  -- outline, not-yet
+        pause_button_up   = { tex = "game_ui",    x=83,  y=1,   w=42,  h=42  }
+        pause_button_down = { tex = "game_ui",    x=126, y=1,   w=42,  h=42  }
+        joker_button_up   = { tex = "game_ui",    x=169, y=1,   w=42,  h=42  }
+        joker_button_down = { tex = "game_ui",    x=212, y=1,   w=42,  h=42  }
+        timebar           = { tex = "game_ui",    x=1,   y=44,  w=264, h=22  }  -- shrinks via fill_x
+        timebar_bg        = { tex = "game_ui",    x=1,   y=67,  w=266, h=24  }  -- 2px frame around timebar
+        image_bg          = { tex = "game_ui",    x=1,   y=92,  w=287, h=417 }  -- 2px frame around portrait
         arrow_left       = { tex = "sprites",    x=0,  y=190, w=40,  h=60  }   -- title screen
         arrow_right      = { tex = "sprites",    x=40, y=190, w=40,  h=60  }   -- title screen
         icon_sound_on    = { tex = "sprites",    x=80, y=190, w=32,  h=32  }
@@ -308,8 +345,8 @@ assets.lua
         button_hover     = { tex = "sprites",    x=0,  y=550, w=200, h=60  }
         category_1       = { tex = "category_1", x=0,  y=0,   w=320, h=300 }
         category_2       = { tex = "category_2", x=0,  y=0,   w=320, h=300 }
-        image_p1_a       = { tex = "image_p1_a", x=0,  y=0,   w=220, h=390 }
-        image_p1_b       = { tex = "image_p1_b", x=0,  y=0,   w=220, h=390 }
+        image_1a          = { tex = "image_1a", x=0, y=0, w=285, h=415 }
+        image_1b          = { tex = "image_1b", x=0, y=0, w=285, h=415 }
         ...
 
     fonts: (already in place — orbitron / orbitron_small / default)
@@ -406,9 +443,9 @@ Roughly in build order — each step is testable before moving to the next.
 
 1. **Engine adds (shipped)**: scale + alpha + options-table on `draw_region`; `draw_text`; `draw_ellipse`; UI canvas to 480; `opt_set` / `opt_get` / `opt_save` / `opt_load`.
 2. **Background + portraits visible**: draw `bg` full-canvas, draw one hardcoded image pair at portrait positions. Static. No input.
-3. **Time bar + score/level/found labels**: `draw_region` with `fill_x` for the time bar; `draw_text` for the score, the `2/5` found counter, and the `3/10` level counter.
-4. **Difference hit-test**: click on portrait 1 → if within 25 units of any unfound difference, mark it found, bump the found counter, trigger the **green** ellipse animation.
-5. **Joker buttons**: 5 buttons stacked. Click auto-reveals one unfound difference with a **yellow** ellipse animation. On click: button scale-up + fade-out, empty slot fades in.
+3. **Time bar + HUD labels + star column**: `draw_region` with `fill_x` for the time bar; `draw_text` for score / level / found counters; 5 `star_empty` regions stacked between portraits (filled per-find).
+4. **Difference hit-test**: click on portrait 1 → if the click falls inside any unfound diff rect, append `{x, y, w, h, joker=false}` to `state.found`, bump the found counter, fill the next star, draw the **green** ellipse.
+5. **Joker button**: single button below the star column with a remaining-counter beneath. Click → pick the first unfound diff, append `{..., joker=true}` to `state.found`, fill the next star, decrement `state.jokers`, draw the **yellow** ellipse. No-op when `state.jokers == 0`.
 6. **Level complete**: when remaining == 0 → LEVEL_COMPLETE state. Dialog scales/fades in. Score count-up animation.
 7. **Continue → next level** within a run (still one category, still one image pool).
 8. **Pause dialog**: Esc or pause button → PAUSED. Dim + dialog. Restart / Highscore / Exit.
