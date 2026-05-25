@@ -43,8 +43,7 @@ return {
     -- directory) and per-glyph metrics. "default" is the font used when a
     -- uiText call passes no explicit font name.
     fonts = {
-        default        = "assets/fonts/orbitron_small.fnt",
-        orbitron       = "assets/fonts/orbitron.fnt",
-        orbitron_small = "assets/fonts/orbitron_small.fnt",
+        default = "assets/fonts/forgotten-futurist-22.fnt",
+        large   = "assets/fonts/forgotten-futurist-40.fnt"        
     },
 }
