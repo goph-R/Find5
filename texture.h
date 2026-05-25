@@ -174,8 +174,9 @@ static void texCacheFree(TexCache *tc)
 
 struct TexBlurEntry {
     char   path[128];
+    int    sx, sy, sw, sh;   /* source rect — region of the PNG to blur */
     int    downW;
-    int    downH;   /* derived from source aspect, recorded for reference */
+    int    downH;            /* derived from source rect aspect */
     GLuint texID;
 };
 
@@ -194,19 +195,23 @@ static void texBlurFree(TexBlurCache *bc)
     bc->count = 0;
 }
 
-/* Get or generate a tiny "color summary" texture of `path` at `downW`
-   pixels wide. The downsampled height is computed from the source
-   image's aspect ratio so the blur preserves proportions. Returns the
-   GL texture ID, or 0 on failure. */
-static GLuint texBlurGet(TexBlurCache *bc, const char *path, int downW)
+/* Get or generate a tiny "color summary" texture of the (sx, sy, sw, sh)
+   rect of `path`, at `downW` pixels wide. The downsampled height is
+   computed from the source rect's aspect ratio so the blur isn't
+   distorted. Pass sw = 0 to use the full PNG. Returns the GL texture
+   ID, or 0 on failure. */
+static GLuint texBlurGet(TexBlurCache *bc, const char *path,
+                         int sx, int sy, int sw, int sh, int downW)
 {
     if (!path || !path[0] || downW <= 0) return 0;
     if (downW > 64) downW = 64;   /* sanity cap — anything bigger isn't a "blur" */
 
     for (int i = 0; i < bc->count; i++) {
-        if (bc->entries[i].downW == downW
-            && strcmp(bc->entries[i].path, path) == 0) {
-            return bc->entries[i].texID;
+        TexBlurEntry *e = &bc->entries[i];
+        if (e->downW == downW
+            && e->sx == sx && e->sy == sy && e->sw == sw && e->sh == sh
+            && strcmp(e->path, path) == 0) {
+            return e->texID;
         }
     }
     if (bc->count >= TEX_BLUR_MAX) {
@@ -214,14 +219,27 @@ static GLuint texBlurGet(TexBlurCache *bc, const char *path, int downW)
         return 0;
     }
 
-    int srcW = 0, srcH = 0, srcCh = 0;
-    unsigned char *src = stbi_load(path, &srcW, &srcH, &srcCh, 4);
+    int imgW = 0, imgH = 0, srcCh = 0;
+    unsigned char *src = stbi_load(path, &imgW, &imgH, &srcCh, 4);
     if (!src) {
         conLogf("texBlur: cannot load %s (%s)\n", path, stbi_failure_reason());
         return 0;
     }
 
-    int downH = (int)((float)downW * (float)srcH / (float)srcW + 0.5f);
+    /* Resolve sub-rect — sw/sh of 0 means "full image". Clamp to image bounds
+       so out-of-range rects don't read past the buffer. */
+    int rx = sx, ry = sy, rw = (sw > 0 ? sw : imgW), rh = (sh > 0 ? sh : imgH);
+    if (rx < 0) { rw += rx; rx = 0; }
+    if (ry < 0) { rh += ry; ry = 0; }
+    if (rx + rw > imgW) rw = imgW - rx;
+    if (ry + rh > imgH) rh = imgH - ry;
+    if (rw <= 0 || rh <= 0) {
+        stbi_image_free(src);
+        conLogf("texBlur: %s: empty rect (%d,%d %dx%d)\n", path, sx, sy, sw, sh);
+        return 0;
+    }
+
+    int downH = (int)((float)downW * (float)rh / (float)rw + 0.5f);
     if (downH < 1) downH = 1;
 
     unsigned char *dst = (unsigned char *)malloc((size_t)downW * downH * 4);
@@ -230,22 +248,22 @@ static GLuint texBlurGet(TexBlurCache *bc, const char *path, int downW)
         return 0;
     }
 
-    /* Box-filter downsample: for each dst pixel, average the source rect
-       that maps to it. Integer accumulators are fine — downW × downH is
-       tiny (≤ 64 × 64 by the cap above). */
+    /* Box-filter downsample over the sub-rect: for each dst pixel, average
+       the source rect that maps to it (shifted by rx/ry into the PNG).
+       Integer accumulators — downW × downH is tiny (≤ 64 × 64). */
     for (int dy = 0; dy < downH; dy++) {
-        int y0 = (dy       * srcH) / downH;
-        int y1 = ((dy + 1) * srcH) / downH;
+        int y0 = ry + ( dy      * rh) / downH;
+        int y1 = ry + ((dy + 1) * rh) / downH;
         if (y1 == y0) y1 = y0 + 1;
         for (int dx = 0; dx < downW; dx++) {
-            int x0 = (dx       * srcW) / downW;
-            int x1 = ((dx + 1) * srcW) / downW;
+            int x0 = rx + ( dx      * rw) / downW;
+            int x1 = rx + ((dx + 1) * rw) / downW;
             if (x1 == x0) x1 = x0 + 1;
 
             unsigned long ar = 0, ag = 0, ab = 0, aa = 0;
-            for (int sy = y0; sy < y1; sy++) {
-                const unsigned char *row = &src[((size_t)sy * srcW + x0) * 4];
-                for (int sx = x0; sx < x1; sx++) {
+            for (int py = y0; py < y1; py++) {
+                const unsigned char *row = &src[((size_t)py * imgW + x0) * 4];
+                for (int px = x0; px < x1; px++) {
                     ar += row[0];
                     ag += row[1];
                     ab += row[2];
@@ -270,10 +288,12 @@ static GLuint texBlurGet(TexBlurCache *bc, const char *path, int downW)
     TexBlurEntry *e = &bc->entries[bc->count++];
     strncpy(e->path, path, 127);
     e->path[127] = '\0';
+    e->sx = sx; e->sy = sy; e->sw = sw; e->sh = sh;
     e->downW = downW;
     e->downH = downH;
     e->texID = texID;
-    conLogf("texBlur: generated %dx%d for %s\n", downW, downH, path);
+    conLogf("texBlur: generated %dx%d for %s [%d,%d %dx%d]\n",
+            downW, downH, path, rx, ry, rw, rh);
     return texID;
 }
 

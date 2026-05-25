@@ -60,14 +60,15 @@ function on_render()
     })
 
     -- ---- Timer bar ----
-    -- timebar_bg is 2px bigger than timebar; drawing both centered puts the
-    -- foreground 1px inside the background. fill_x shrinks the foreground
-    -- from the right as time_left / time_total drops toward zero.
+    -- timebar_bg (266×24) is drawn centered; timebar (264×22) is anchored
+    -- LEFT+TOP at the bg's inner-left edge (1px in from -133 → -132) so the
+    -- foreground shrinks rightward as fill_x drops toward zero — the visible
+    -- portion always starts flush with the bg's left edge.
     draw_region("timebar_bg", 0, BAR_Y, {
         align = ALIGN_CENTER + ALIGN_TOP,
     })
-    draw_region("timebar", 0, BAR_Y + 1, {
-        align = ALIGN_CENTER + ALIGN_TOP,
+    draw_region("timebar", -132, BAR_Y + 1, {
+        align = ALIGN_LEFT + ALIGN_TOP,
         fill_x = state.time_left / state.time_total,
     })
 

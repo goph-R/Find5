@@ -546,24 +546,21 @@ static int scr_draw_blur(lua_State *L)
     }
     const char *texPath = assetRegResolveTexture(s->assets, rg->texName);
     if (!texPath) return 0;
+    if (rg->sw <= 0 || rg->sh <= 0) return 0;
 
-    /* Source dimensions come from the regular tex cache (or a fresh load
-       if this is the first reference to the file). We need them to
-       compute the dst aspect — the blur cache uses them too internally
-       but doesn't expose them. */
-    int srcW = 0, srcH = 0;
-    texCacheGetA(s->texCache, texPath, GL_CLAMP_TO_EDGE, 1, &srcW, &srcH);
-    if (srcW <= 0 || srcH <= 0) return 0;
-
-    GLuint tex = texBlurGet(s->blurCache, texPath, downW);
+    /* Downsample only the region's source rect — for textures that are
+       POT-padded to a bigger surface than the visible image, this avoids
+       averaging in the empty/transparent padding pixels. */
+    GLuint tex = texBlurGet(s->blurCache, texPath,
+                            rg->sx, rg->sy, rg->sw, rg->sh, downW);
     if (!tex) return 0;
 
-    /* Stretch to view width, preserve source aspect, center vertically.
-       For a taller-than-wide portrait at 16:27 the height overruns the
-       canvas — exactly what we want, the blurred color fills top-to-bottom. */
+    /* Stretch to view width, preserve the region's aspect, center vertically.
+       For a taller-than-wide portrait the height overruns the canvas —
+       exactly what we want, the blurred color fills top-to-bottom. */
     float vw = uiGetWidth(s->ui);
     float dst_w = vw;
-    float dst_h = vw * (float)srcH / (float)srcW;
+    float dst_h = vw * (float)rg->sh / (float)rg->sw;
 
     UiRect dr;
     dr.x = -dst_w * 0.5f;
