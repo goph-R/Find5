@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Find5 — diff annotator</title>
+<style>
+  body { font: 14px/1.4 monospace; padding: 16px; margin: 0; background: #1e1e1e; color: #eee; }
+  h2 { margin: 0 0 8px; font-size: 16px; }
+  #status { margin: 4px 0 8px; color: #aaa; }
+  #status b { color: #fff; }
+  canvas { border: 1px solid #555; image-rendering: pixelated; cursor: crosshair; background: #000; display: block; }
+  #help { margin: 8px 0; color: #aaa; }
+  kbd { background: #333; border: 1px solid #555; padding: 1px 5px; border-radius: 3px; color: #ddd; }
+  pre { background: #2a2a2a; border: 1px solid #444; padding: 10px; margin: 4px 0 0; color: #ddd; max-width: 600px; }
+  button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #444; }
+</style>
+</head>
+<body>
+
+<h2>Find5 — diff annotator</h2>
+
+<!-- ──────────────────────────────────────────────────────────────────
+     Edit these two paths to point at the portrait pair you're working
+     on. Paths are relative to this HTML file's location (tools/).
+     ────────────────────────────────────────────────────────────────── -->
+<script>
+  const PATH_A = "../assets/textures/image_1a.png";
+  const PATH_B = "../assets/textures/image_1b.png";
+</script>
+
+<div id="status">
+  Active: <b id="which">A</b>
+  &nbsp;&middot;&nbsp; Rects: <b id="count">0</b>/5
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="help">
+  <kbd>Space</kbd> swap A/B
+  &nbsp;&middot;&nbsp; drag mouse to add a rect
+  &nbsp;&middot;&nbsp; <kbd>Backspace</kbd> undo last
+  &nbsp;&middot;&nbsp; <kbd>C</kbd> clear all
+  &nbsp;&middot;&nbsp; <button id="copy">Copy</button>
+</div>
+
+<pre id="out">diffs = { }</pre>
+
+<script>
+const imgA = new Image();
+const imgB = new Image();
+imgA.src = PATH_A;
+imgB.src = PATH_B;
+
+const canvas  = document.getElementById('c');
+const ctx     = canvas.getContext('2d');
+const out     = document.getElementById('out');
+const whichEl = document.getElementById('which');
+const countEl = document.getElementById('count');
+
+let active = 'A';
+let rects  = [];
+let drag   = null;   // { x, y, w, h, ox, oy } while a drag is in progress
+
+let loaded = 0;
+const onLoad = () => {
+  loaded++;
+  if (loaded === 2) {
+    if (imgA.naturalWidth !== imgB.naturalWidth ||
+        imgA.naturalHeight !== imgB.naturalHeight) {
+      alert("Image A and B have different dimensions — fix in GIMP first.");
+    }
+    canvas.width  = imgA.naturalWidth;
+    canvas.height = imgA.naturalHeight;
+    render();
+  }
+};
+const onErr = (e) => alert("Failed to load: " + e.target.src);
+imgA.addEventListener('load', onLoad);
+imgB.addEventListener('load', onLoad);
+imgA.addEventListener('error', onErr);
+imgB.addEventListener('error', onErr);
+
+function currentImage() {
+  return active === 'A' ? imgA : imgB;
+}
+
+function render() {
+  ctx.drawImage(currentImage(), 0, 0);
+
+  // Existing rects — red.
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255, 64, 64, 0.95)';
+  for (const r of rects) {
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
+  }
+  // In-progress drag — green.
+  if (drag) {
+    ctx.strokeStyle = 'rgba(80, 220, 100, 0.95)';
+    ctx.strokeRect(drag.x + 0.5, drag.y + 0.5, drag.w, drag.h);
+  }
+
+  whichEl.textContent = active;
+  countEl.textContent = rects.length;
+  out.textContent = formatLua();
+}
+
+function formatLua() {
+  if (rects.length === 0) return "diffs = { }";
+  const lines = rects.map(r =>
+    `    { x = ${r.x}, y = ${r.y}, w = ${r.w}, h = ${r.h} },`
+  );
+  return "diffs = {\n" + lines.join('\n') + "\n}";
+}
+
+// Convert mouse event coords → canvas pixel coords. Required because the
+// canvas may be CSS-scaled if the viewport is small.
+function canvasCoords(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - r.left) * (canvas.width  / r.width)),
+    y: Math.round((e.clientY - r.top)  * (canvas.height / r.height)),
+  };
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  if (rects.length >= 5) return;
+  const p = canvasCoords(e);
+  drag = { x: p.x, y: p.y, w: 0, h: 0, ox: p.x, oy: p.y };
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const p = canvasCoords(e);
+  // Allow dragging in any direction; normalize to top-left + positive w/h.
+  drag.x = Math.min(p.x, drag.ox);
+  drag.y = Math.min(p.y, drag.oy);
+  drag.w = Math.abs(p.x - drag.ox);
+  drag.h = Math.abs(p.y - drag.oy);
+  // Clamp to image bounds.
+  if (drag.x < 0)               { drag.w += drag.x; drag.x = 0; }
+  if (drag.y < 0)               { drag.h += drag.y; drag.y = 0; }
+  if (drag.x + drag.w > canvas.width)  drag.w = canvas.width  - drag.x;
+  if (drag.y + drag.h > canvas.height) drag.h = canvas.height - drag.y;
+  render();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!drag) return;
+  if (drag.w >= 2 && drag.h >= 2 && rects.length < 5) {
+    rects.push({ x: drag.x, y: drag.y, w: drag.w, h: drag.h });
+  }
+  drag = null;
+  render();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    active = active === 'A' ? 'B' : 'A';
+    render();
+  } else if (e.code === 'Backspace') {
+    e.preventDefault();
+    if (rects.length > 0) rects.pop();
+    render();
+  } else if (e.code === 'KeyC') {
+    e.preventDefault();
+    rects = [];
+    render();
+  }
+});
+
+document.getElementById('copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(formatLua()).then(() => {
+    const btn = document.getElementById('copy');
+    const t = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = t; }, 900);
+  });
+});
+</script>
+</body>
+</html>
