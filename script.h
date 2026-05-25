@@ -446,6 +446,70 @@ static int scr_draw_ellipse(lua_State *L)
     return 0;
 }
 
+/* view_size()
+ * Returns (virtual_w, virtual_h) of the current UI canvas. virtual_h is
+ * always UI_VIRTUAL_H (480); virtual_w scales with the window's aspect.
+ * Use when you need to anchor against the actual visible edges instead
+ * of the 640×480 design rect (e.g. covering background math, edge HUD). */
+static int scr_view_size(lua_State *L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, "find5.sys");
+    ScriptSystem *s = (ScriptSystem *)lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    lua_pushnumber(L, uiGetWidth(s->ui));
+    lua_pushnumber(L, uiGetHeight(s->ui));
+    return 2;
+}
+
+/* draw_bg(name)
+ * Draws a region scaled to cover the full view, centered, cropping any
+ * overflow on the longer axis (CSS background-size: cover). The region's
+ * source pixel size is the "natural" size; we uniformly scale it up by
+ * max(view_w / source_w, view_h / source_h) so both dims are covered.
+ *
+ * Use this for the level / title-screen background. Other UI keeps using
+ * draw_region at design-rect coords. */
+static int scr_draw_bg(lua_State *L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, "find5.sys");
+    ScriptSystem *s = (ScriptSystem *)lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    const char *name = luaL_checkstring(L, 1);
+    const Region *rg = assetRegFindRegion(s->assets, name);
+    if (!rg) {
+        conLogf("draw_bg: unknown region '%s'\n", name);
+        return 0;
+    }
+    const char *texPath = assetRegResolveTexture(s->assets, rg->texName);
+    int tw = 0, th = 0;
+    GLuint tex = texCacheGetA(s->texCache, texPath, GL_CLAMP_TO_EDGE, 1, &tw, &th);
+    if (!tex || tw <= 0 || th <= 0 || rg->sw <= 0 || rg->sh <= 0) return 0;
+
+    float vw = uiGetWidth(s->ui);
+    float vh = uiGetHeight(s->ui);
+    float bw = (float)rg->sw;
+    float bh = (float)rg->sh;
+    float scaleX = vw / bw;
+    float scaleY = vh / bh;
+    float scale  = (scaleX > scaleY) ? scaleX : scaleY;
+
+    float dst_w = bw * scale;
+    float dst_h = bh * scale;
+    float dst_x = -dst_w * 0.5f;
+    float dst_y = -dst_h * 0.5f;
+
+    float u0 = (float)rg->sx                / (float)tw;
+    float v0 = (float)rg->sy                / (float)th;
+    float u1 = (float)(rg->sx + rg->sw)     / (float)tw;
+    float v1 = (float)(rg->sy + rg->sh)     / (float)th;
+
+    UiRect dr;
+    dr.x = dst_x; dr.y = dst_y; dr.w = dst_w; dr.h = dst_h;
+    uiIconUVColor(dr, tex, u0, v0, u1, v1, 1.0f, 1.0f, 1.0f, 1.0f);
+    return 0;
+}
+
 /* ---- Options / persistence ----
  *
  * Key-value store backed by a single file `find5.dat` next to the exe.
@@ -809,6 +873,8 @@ static int scriptInit(ScriptSystem *s, UiState *ui, SoundSystem *snd,
     lua_register(s->L, "draw_region",     scr_draw_region);
     lua_register(s->L, "draw_text",       scr_draw_text);
     lua_register(s->L, "draw_ellipse",    scr_draw_ellipse);
+    lua_register(s->L, "draw_bg",         scr_draw_bg);
+    lua_register(s->L, "view_size",       scr_view_size);
     lua_register(s->L, "opt_set",         scr_opt_set);
     lua_register(s->L, "opt_get",         scr_opt_get);
     lua_register(s->L, "opt_save",        scr_opt_save);
