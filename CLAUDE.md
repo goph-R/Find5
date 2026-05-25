@@ -33,6 +33,25 @@ Flow: app boots, loads `assets.lua` (sounds/music/textures/fonts manifest), runs
 
 Windows-specific: SDL 1.2's fullscreen path drops the monitor's refresh rate to 60Hz because it calls `ChangeDisplaySettings` without a frequency. `main.cpp` samples the configured desktop rate via `EnumDisplaySettings(ENUM_REGISTRY_SETTINGS)` before `SDL_Init` and re-applies it with `ChangeDisplaySettingsEx` after `SDL_SetVideoMode` when `-fullscreen` is passed. No-op on Linux.
 
+### Headless sanity-check (CI / no audio device)
+
+To boot the game in an environment with no audio device — typical for the harness running these tasks — three pieces matter, in order:
+
+1. **OpenAL needs a backend that doesn't require hardware.** `SDL_AUDIODRIVER=dummy` is **not enough**: OpenAL Soft has its own backend chain independent of SDL. Set `ALSOFT_DRIVERS=null` (or `ALSOFT_DRIVERS=oss,alsa,null` if you want a real device when available, with null as fallback). Without this, `sndInit` returns 1 and `main` exits before Lua loads — you'll see `OpenAL: alcOpenDevice failed` and never reach `scripts/main.lua`.
+2. **Pipe stdout to a file**, not to `| head` or similar. `conLogf` writes to stdout, which goes block-buffered the moment it's not a terminal. A `SIGTERM` from `timeout` (or anything else) kills the process **without flushing libc's stdout buffer**, so the captured pipe is empty even though the program ran fine. Redirecting to a file lets the kernel surface whatever has been flushed; in practice all the boot-time `conLogf` lines have flushed by the first frame.
+3. **Bound the run with `timeout`** and use `-windowed` so SDL doesn't try to change video modes. SDL 1.2 creates a window but does not need one to be visible to render — boot-time asset registration, Lua require, and `on_start` all run.
+
+The incantation that has worked reliably:
+
+```bash
+env ALSOFT_DRIVERS=null timeout 1.5 ./find5 -windowed > /tmp/find5.out 2>&1
+sed -n '1,40p' /tmp/find5.out      # or grep for what you're checking
+```
+
+A clean boot prints, in order: `Resolution: …`, font atlas built, `opt_load` reading or skipping `find5.dat`, `script: Lua 5.1 initialised`, each asset's load line, `assets: N sound(s), M music, …`, then nothing more until you SIGTERM it. Anything else (e.g. `script:` followed by a Lua traceback, `texBlur: cannot load …`) is a real error worth reading.
+
+This is enough to confirm "did my Lua syntax compile, did `require` resolve, did the assets register", which covers most refactor regressions. For anything that actually needs to render — colors / layout / animation timing — open it on the dev box; there's no headless visual check.
+
 ## Architecture
 
 ### Header-only modules included from main.cpp
