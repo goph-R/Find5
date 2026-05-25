@@ -12,13 +12,23 @@ local state = {
     joker_max   = 5,
     time_left   = 35,
     time_total  = 60,
-    -- Difference positions in portrait-local coords (centered on each image).
-    -- Same coordinates apply to both image_1a and image_1b — that's the
-    -- point of spot-the-difference; the engine just draws the marker on
-    -- both portraits.    
-    found       = {
-        { x =  60, y = 120, w = 120, h = 40, joker = false },
-        { x =  40, y =  30, w = 40, h = 60, joker = true },
+    -- All 5 difference rects for the current portrait pair (image_1a / image_1b).
+    -- Coords are portrait-local pixels (top-left origin, image is 285×415).
+    -- Same rects apply to both portraits — that's the whole spot-the-difference
+    -- premise. Authored with tools/diffs.html.
+    diffs = {
+        { x =  50, y =  66, w = 42, h = 44 },
+        { x = 195, y = 133, w = 27, h = 24 },
+        { x = 166, y = 246, w = 36, h = 40 },
+        { x =  22, y = 264, w = 32, h = 31 },
+        { x =   2, y = 180, w = 57, h = 36 },
+    },
+    -- Diffs the player has uncovered. Each entry mirrors a row from `diffs`
+    -- plus a `joker` flag — false = green (player click), true = yellow
+    -- (joker reveal). Two pre-filled here so the mockup shows one of each.
+    found = {
+        { x =  50, y =  66, w = 42, h = 44, joker = false },
+        { x =   2, y = 180, w = 57, h = 36, joker = true  },
     },
 }
 
@@ -61,21 +71,63 @@ function on_render()
     draw_blur("image_1a", { width = 16, alpha = 0.6 })
 
     -- ---- HUD top row ----
-    draw_text("LEVEL", LEVEL_X, TOP_LABELS_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
-    draw_text(string.format("%d", state.level), LEVEL_X - 20, TOP_NUMBERS_Y, { align = ALIGN_CENTER, font = "large", color = CURRENT_COLOR })
-    draw_text(string.format("%d", state.level_count), LEVEL_X + 20, TOP_NUMBERS_Y, { align = ALIGN_CENTER, font = "large", color = TOTAL_COLOR })
-    draw_text("/", LEVEL_X, TOP_SLASH_LABELS_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
+    draw_text("LEVEL", LEVEL_X, TOP_LABELS_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
+    draw_text(string.format("%d", state.level), LEVEL_X - 20, TOP_NUMBERS_Y, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = CURRENT_COLOR
+	})
+    draw_text(string.format("%d", state.level_count), LEVEL_X + 20, TOP_NUMBERS_Y, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = TOTAL_COLOR
+	})
+    draw_text("/", LEVEL_X, TOP_SLASH_LABELS_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
 
-    draw_text("FOUND", FOUND_X, TOP_LABELS_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
-    draw_text(string.format("%d", table.getn(state.found)), FOUND_X - 20, TOP_NUMBERS_Y, { align = ALIGN_CENTER, font = "large", color = CURRENT_COLOR })
-    draw_text("5", FOUND_X + 20, TOP_NUMBERS_Y, { align = ALIGN_CENTER, font = "large", color = TOTAL_COLOR })
-    draw_text("/", FOUND_X, TOP_SLASH_LABELS_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
+    draw_text("FOUND", FOUND_X, TOP_LABELS_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
+    draw_text(string.format("%d", table.getn(state.found)), FOUND_X - 20, TOP_NUMBERS_Y, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = CURRENT_COLOR
+	})
+    draw_text("5", FOUND_X + 20, TOP_NUMBERS_Y, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = TOTAL_COLOR
+	})
+    draw_text("/", FOUND_X, TOP_SLASH_LABELS_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
 
-    draw_text("SCORE", SCORE_X, TOP_LABELS_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
-    draw_text(string.format("%d", state.score), SCORE_X, TOP_NUMBERS_Y, { align = ALIGN_CENTER, font = "large", color = SCORE_COLOR })
+    draw_text("SCORE", SCORE_X, TOP_LABELS_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
+    draw_text(string.format("%d", state.score), SCORE_X, TOP_NUMBERS_Y, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = SCORE_COLOR
+	})
 
-    draw_text("JOKER", JOKER_X, JOKER_Y, { align = ALIGN_CENTER, color = SMALL_LABEL_COLOR })
-    draw_text(string.format("%d", state.jokers), JOKER_X, JOKER_Y + 16, { align = ALIGN_CENTER, font = "large", color = CURRENT_COLOR })
+    draw_text("JOKER", JOKER_X, JOKER_Y, {
+	  align = ALIGN_CENTER,
+	  color = SMALL_LABEL_COLOR
+	})
+    draw_text(string.format("%d", state.jokers), JOKER_X, JOKER_Y + 16, {
+	  align = ALIGN_CENTER,
+	  font = "large",
+	  color = CURRENT_COLOR
+	})
 
     -- Pause button — top-right corner.
     draw_region("pause_button_up", PAUSE_BTN_X, PAUSE_BTN_Y)
