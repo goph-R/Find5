@@ -447,6 +447,34 @@ static int scr_draw_ellipse(lua_State *L)
     return 0;
 }
 
+/* draw_quad(x, y, w, h [, opts])
+ * Flat-color quad — useful for dim overlays, flash effects, dialog
+ * backdrops, anything that doesn't need a texture. (x, y) is the
+ * top-left anchor in virtual-canvas coords; w / h are sizes.
+ *
+ *   color = { 1, 0, 0 [, 1] }   -- RGB(A) tint, defaults to opaque white
+ *   alpha = 0.5                 -- overrides color[4] if both given
+ */
+static int scr_draw_quad(lua_State *L)
+{
+    float x = (float)luaL_checknumber(L, 1);
+    float y = (float)luaL_checknumber(L, 2);
+    float w = (float)luaL_checknumber(L, 3);
+    float h = (float)luaL_checknumber(L, 4);
+
+    float cr = 1.0f, cg = 1.0f, cb = 1.0f, ca = 1.0f;
+    if (lua_istable(L, 5)) {
+        scr_optfield_color(L, 5, &cr, &cg, &cb, &ca);
+    }
+
+    UiRect r;
+    r.x = x; r.y = y; r.w = w; r.h = h;
+    UiColor c;
+    c.r = cr; c.g = cg; c.b = cb; c.a = ca;
+    uiQuad(r, c);
+    return 0;
+}
+
 /* view_size()
  * Returns (virtual_w, virtual_h) of the current UI canvas. virtual_h is
  * always UI_VIRTUAL_H (480); virtual_w scales with the window's aspect.
@@ -936,6 +964,7 @@ static int scriptInit(ScriptSystem *s, UiState *ui, SoundSystem *snd,
     lua_register(s->L, "draw_region",     scr_draw_region);
     lua_register(s->L, "draw_text",       scr_draw_text);
     lua_register(s->L, "draw_ellipse",    scr_draw_ellipse);
+    lua_register(s->L, "draw_quad",       scr_draw_quad);
     lua_register(s->L, "draw_bg",         scr_draw_bg);
     lua_register(s->L, "draw_blur",       scr_draw_blur);
     lua_register(s->L, "view_size",       scr_view_size);

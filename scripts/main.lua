@@ -12,6 +12,7 @@ local state = {
     joker_max   = 5,
     time_left   = 35,
     time_total  = 60,
+    miss_flash  = 0,            -- seconds of red-overlay fade remaining (0 = idle)
     -- All 5 difference rects for the current portrait pair (image_1a / image_1b).
     -- Coords are portrait-local pixels (top-left origin, image is 285×415).
     -- Same rects apply to both portraits — that's the whole spot-the-difference
@@ -66,6 +67,9 @@ function on_start()
     -- music_play("title", 0.5, true)
 end
 
+local MISS_FLASH_DURATION = 0.4
+local MISS_FLASH_MAX_ALPHA = 0.5
+
 function on_update(dt)
     -- Tick the countdown. Clamp at 0 so the timebar's fill_x doesn't
     -- go negative once we run out. Game-over reveal lands in a later
@@ -73,6 +77,11 @@ function on_update(dt)
     if state.time_left > 0 then
         state.time_left = state.time_left - dt
         if state.time_left < 0 then state.time_left = 0 end
+    end
+    -- Tick the miss-click red flash down toward 0.
+    if state.miss_flash > 0 then
+        state.miss_flash = state.miss_flash - dt
+        if state.miss_flash < 0 then state.miss_flash = 0 end
     end
 end
 
@@ -132,8 +141,14 @@ function on_mousedown(x, y, button)
             return
         end
     end
-    -- Click landed on the portrait but missed all unfound diffs.
-    -- Wrong-click animation (red flash) lands in a later step.
+    -- Miss — click landed on a portrait but no unfound diff matched.
+    -- Trigger the red full-screen fade, dock 1/4 of the level's total
+    -- time, and play the wrong SFX (register "wrong" in assets.lua to
+    -- hear it; harmlessly logs "unknown sound" until you do).
+    state.miss_flash = MISS_FLASH_DURATION
+    state.time_left  = state.time_left - state.time_total / 4
+    if state.time_left < 0 then state.time_left = 0 end
+    -- snd_play("wrong")
 end
 
 function on_render()
@@ -241,6 +256,18 @@ function on_render()
         })
         draw_ellipse(IMG_RIGHT_X + p.x + p.w/2, IMG_Y + p.y + p.h/2, p.w/2, p.h/2, {
             thickness = 3, color = p.joker and yellow or green,
+        })
+    end
+
+    -- ---- Miss-click red overlay ----
+    -- Drawn last so it covers HUD + portraits + ellipses. Linear fade
+    -- from MISS_FLASH_MAX_ALPHA to 0 over MISS_FLASH_DURATION seconds.
+    if state.miss_flash > 0 then
+        local alpha = MISS_FLASH_MAX_ALPHA
+                    * (state.miss_flash / MISS_FLASH_DURATION)
+        local vw, vh = view_size()
+        draw_quad(-vw / 2, -vh / 2, vw, vh, {
+            color = { 1.0, 0.0, 0.0, alpha },
         })
     end
 end
