@@ -76,6 +76,66 @@ function on_update(dt)
     end
 end
 
+-- ---- Click handling ------------------------------------------------------
+
+local PORTRAIT_W = 285
+local PORTRAIT_H = 415
+
+local function pointInRect(px, py, rx, ry, rw, rh)
+    return px >= rx and px < rx + rw and py >= ry and py < ry + rh
+end
+
+-- Has this diff already been uncovered (by click or joker)? Compare on
+-- rect identity since state.found rows are copies of state.diffs rows.
+local function isFound(d)
+    for _, f in ipairs(state.found) do
+        if f.x == d.x and f.y == d.y and f.w == d.w and f.h == d.h then
+            return true
+        end
+    end
+    return false
+end
+
+-- Convert a virtual-canvas click (engine-space, center origin) into
+-- portrait-local pixel coords. Returns nil if the click is outside both
+-- portrait rects. Either portrait counts — the diff is in the same place
+-- on both images, so clicking either side is a valid "I see it".
+local function clickToPortraitLocal(x, y)
+    -- Portraits are drawn 1px in from their image_bg frames.
+    local left_x   = IMG_LEFT_X  + 1
+    local right_x  = IMG_RIGHT_X + 1
+    local top_y    = IMG_Y       + 1
+    if y < top_y or y >= top_y + PORTRAIT_H then return nil end
+    if x >= left_x  and x < left_x  + PORTRAIT_W then
+        return x - left_x,  y - top_y
+    end
+    if x >= right_x and x < right_x + PORTRAIT_W then
+        return x - right_x, y - top_y
+    end
+    return nil
+end
+
+function on_mousedown(x, y, button)
+    if button ~= 1 then return end
+    if #state.found >= 5 then return end
+    if state.time_left <= 0 then return end
+
+    local lx, ly = clickToPortraitLocal(x, y)
+    if not lx then return end   -- click landed off-portrait — ignore for now
+
+    for _, d in ipairs(state.diffs) do
+        if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
+            table.insert(state.found, {
+                x = d.x, y = d.y, w = d.w, h = d.h,
+                joker = false,
+            })
+            return
+        end
+    end
+    -- Click landed on the portrait but missed all unfound diffs.
+    -- Wrong-click animation (red flash) lands in a later step.
+end
+
 function on_render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
     draw_blur("image_1a", { width = 16, alpha = 0.6 })
