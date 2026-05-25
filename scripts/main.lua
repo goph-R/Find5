@@ -173,6 +173,11 @@ function on_mousedown(x, y, button)
                 })
                 state.jokers = state.jokers - 1
             end
+        else
+            -- Out of jokers — audio "buzz" so the player knows the button
+            -- is dead. snd_play silently no-ops if "wrong" isn't in
+            -- assets.lua yet (it just logs once per click).
+            snd_play("wrong")
         end
         return
     end
