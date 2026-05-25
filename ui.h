@@ -543,7 +543,7 @@ static float uiTextWidth(UiState *ui, const char *text, float scale,
         for (const char *p = text; *p; p++) len++;
         return len * 8.0f * scale;
     }
-    float rs = (scale * 8.0f) / (float)font->lineHeight;
+    float rs = scale;
     float w = 0.0f;
     for (const char *p = text; *p; p++) {
         unsigned char ch = (unsigned char)*p;
@@ -667,9 +667,11 @@ static void uiEllipse(float cx, float cy, float rx, float ry,
    (x, y) is the anchor — by default the top-left corner of the first line.
    `align` shifts the anchor: MIDDLE|CENTER anchors the text's midpoint at
    (x, y), RIGHT anchors the right edge, etc.
-   `scale` keeps its legacy meaning: the line renders at (scale * 8) virtual
-   pixels tall. For BMFont rendering the font's native lineHeight is scaled
-   to match, so existing HUD calls stay visually consistent.
+   `scale` is a multiplier of the font's native lineHeight. scale = 1.0
+   draws at the font's authored size (e.g. a 22-px BMFont renders at 22
+   virtual px tall); 1.5 is 50% larger; 0.5 is half. For the built-in
+   8x8 fallback the native size is 8, so the legacy convention still
+   holds there.
    `fontName` looks up a loaded BMFont (NULL → "default"). If no font is
    registered, the built-in 8x8 atlas is used as a fallback. */
 static void uiText(UiState *ui, float x, float y, UiColor c, const char *text,
@@ -725,7 +727,7 @@ static void uiText(UiState *ui, float x, float y, UiColor c, const char *text,
     }
 
     /* BMFont render path. */
-    float rs = (scale * 8.0f) / (float)font->lineHeight;
+    float rs = scale;
 
     /* Measure for alignment. */
     float textW = 0.0f;

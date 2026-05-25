@@ -61,10 +61,10 @@ function on_render()
         alpha = alpha,
     })
 
-    -- HUD-style label, top-left. White, default font.
-    draw_text("Find5 engine demo", -310, -230, { scale = 1.5 })
+    -- HUD-style label, top-left. White, default font at native size.
+    draw_text("Find5 engine demo", -310, -230, { scale = 1.0 })
 
-    -- Centered title, orbitron font, semi-transparent.
+    -- Centered prompt, default font at 1.5x native, semi-transparent.
     draw_text("press F to trigger find animation", 0, 200, {
         scale = 1.5,
         align = ALIGN_CENTER + ALIGN_MIDDLE,
