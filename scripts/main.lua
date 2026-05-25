@@ -13,6 +13,7 @@ local current_diffs = current_pair.diffs
 
 -- ---- State-machine modes ----
 local STATE_PLAYING          = "playing"
+local STATE_PAUSED           = "paused"
 local STATE_LEVEL_COMPLETE   = "level_complete"
 local STATE_GAME_OVER_REVEAL = "game_over_reveal"
 local STATE_GAME_OVER        = "game_over"
@@ -140,6 +141,9 @@ local function enterGameOverReveal()
     state.reveal_t = 0
 end
 
+local function enterPaused()   state.mode = STATE_PAUSED  end
+local function resumePlaying() state.mode = STATE_PLAYING end
+
 -- ---- Hooks ----------------------------------------------------------------
 
 function on_start()
@@ -147,6 +151,10 @@ function on_start()
 end
 
 function on_update(dt)
+    -- Pause freezes everything: timer, animations, the lot. State just
+    -- sits at whatever it was when the player hit the pause button.
+    if state.mode == STATE_PAUSED then return end
+
     -- Animations always tick — the last find ellipse should finish drawing
     -- even after we transition to LEVEL_COMPLETE.
     for _, f in ipairs(state.found) do
@@ -195,6 +203,12 @@ end
 function on_mousedown(x, y, button)
     if button ~= 1 then return end
 
+    -- Paused: any click resumes the game, nothing else fires.
+    if state.mode == STATE_PAUSED then
+        resumePlaying()
+        return
+    end
+
     -- Terminal states swallow clicks to restart, no other action runs.
     if state.mode == STATE_LEVEL_COMPLETE then
         if state.win_t >= POST_WIN_DELAY then resetLevel() end
@@ -205,6 +219,13 @@ function on_mousedown(x, y, button)
         return
     end
     if state.mode ~= STATE_PLAYING then return end  -- game_over_reveal: input locked
+
+    -- Pause button — top-right, 42×42 at (PAUSE_BTN_X, PAUSE_BTN_Y). Tested
+    -- before everything else in PLAYING so it can't double as a missclick.
+    if pointInRect(x, y, PAUSE_BTN_X, PAUSE_BTN_Y, 42, 42) then
+        enterPaused()
+        return
+    end
 
     -- Joker button — tested first so a button click never falls through
     -- to portrait hit-testing. Press flash registers regardless.
@@ -396,7 +417,8 @@ function on_render()
     -- Placeholder text until the real dialogs land. Dim the whole view,
     -- then center a title in the large font; show a "click to ..." hint
     -- under it once the input is unlocked.
-    if state.mode == STATE_LEVEL_COMPLETE or state.mode == STATE_GAME_OVER then
+    if state.mode == STATE_LEVEL_COMPLETE or state.mode == STATE_GAME_OVER
+       or state.mode == STATE_PAUSED then
         local vw, vh = view_size()
         draw_quad(-vw / 2, -vh / 2, vw, vh, {
             color = { 0, 0, 0, 0.6 },
@@ -406,9 +428,12 @@ function on_render()
         if state.mode == STATE_LEVEL_COMPLETE then
             title = "LEVEL COMPLETE!"
             if state.win_t >= POST_WIN_DELAY then hint = "click to continue" end
-        else
+        elseif state.mode == STATE_GAME_OVER then
             title = "GAME OVER"
-            hint = "click to retry"
+            hint  = "click to retry"
+        else  -- STATE_PAUSED
+            title = "PAUSED"
+            hint  = "click to resume"
         end
 
         draw_text(title, 0, -20, {
