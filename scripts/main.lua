@@ -26,10 +26,14 @@ local state = {
     },
     -- Diffs the player has uncovered. Each entry mirrors a row from `diffs`
     -- plus a `joker` flag — false = green (player click), true = yellow
-    -- (joker reveal). Two pre-filled here so the mockup shows one of each.
+    -- (joker reveal) — and a `t` timer counting up from 0 during the
+    -- "drawing" ellipse animation. Once t >= ELLIPSE_DRAW_DURATION the
+    -- ellipse is fully drawn and stays that way. The two pre-filled
+    -- entries start at t = 1 so the mockup boots into the post-animation
+    -- steady state.
     found = {
-        { x =  50, y =  66, w = 42, h = 44, joker = false },
-        { x =   2, y = 180, w = 57, h = 36, joker = true  },
+        { x =  50, y =  66, w = 42, h = 44, joker = false, t = 1 },
+        { x =   2, y = 180, w = 57, h = 36, joker = true,  t = 1 },
     },
 }
 
@@ -69,6 +73,7 @@ end
 
 local MISS_FLASH_DURATION = 0.4
 local MISS_FLASH_MAX_ALPHA = 0.5
+local ELLIPSE_DRAW_DURATION = 0.4
 
 function on_update(dt)
     -- Tick the countdown. Clamp at 0 so the timebar's fill_x doesn't
@@ -82,6 +87,14 @@ function on_update(dt)
     if state.miss_flash > 0 then
         state.miss_flash = state.miss_flash - dt
         if state.miss_flash < 0 then state.miss_flash = 0 end
+    end
+    -- Advance each found entry's "drawing" animation. Stops at the
+    -- duration; renders interpret t / duration as the finish fraction.
+    for _, f in ipairs(state.found) do
+        if f.t < ELLIPSE_DRAW_DURATION then
+            f.t = f.t + dt
+            if f.t > ELLIPSE_DRAW_DURATION then f.t = ELLIPSE_DRAW_DURATION end
+        end
     end
 end
 
@@ -136,7 +149,7 @@ function on_mousedown(x, y, button)
         if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
             table.insert(state.found, {
                 x = d.x, y = d.y, w = d.w, h = d.h,
-                joker = false,
+                joker = false, t = 0,
             })
             return
         end
@@ -250,12 +263,16 @@ function on_render()
     local green = { 0.3, 1.0, 0.4, 1.0 }
     local yellow = { 1.0, 1.0, 0.0, 1.0 }
     for _, p in ipairs(state.found) do
-
+        -- Sweep the "drawing" animation: finish 0 → 1 over
+        -- ELLIPSE_DRAW_DURATION seconds, then stays full.
+        local finish = p.t / ELLIPSE_DRAW_DURATION
+        if finish > 1 then finish = 1 end
+        local color  = p.joker and yellow or green
         draw_ellipse(IMG_LEFT_X + p.x + p.w/2, IMG_Y + p.y + p.h/2, p.w/2, p.h/2, {
-            thickness = 3, color = p.joker and yellow or green,
+            finish = finish, thickness = 3, color = color,
         })
         draw_ellipse(IMG_RIGHT_X + p.x + p.w/2, IMG_Y + p.y + p.h/2, p.w/2, p.h/2, {
-            thickness = 3, color = p.joker and yellow or green,
+            finish = finish, thickness = 3, color = color,
         })
     end
 
