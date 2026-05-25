@@ -28,6 +28,9 @@ return {
         sprite     = "assets/textures/logo.png",
         menu_bg    = "assets/textures/menu_bg.png",
         loading_bg = "assets/textures/loading_bg.png",
+        game_ui    = "assets/textures/game_ui.png",
+        image_1a   = "assets/textures/image_1a.png",
+        image_1b   = "assets/textures/image_1b.png",
     },
 
     -- Regions are sub-rectangles of textures, addressed by name from
@@ -35,7 +38,19 @@ return {
     -- normalized). For a full-image region, use 0, 0 and the texture's
     -- natural size. Atlases pack many regions into one texture.
     regions = {
+
         logo = { tex = "sprite", x = 0, y = 0, w = 256, h = 64 },
+
+        joker             = { tex = "game_ui", x = 1, y =  1, w = 40, h = 40 },
+        joker_empty       = { tex = "game_ui", x = 42, y =  1, w = 40, h = 40 },
+        pause_button_up   = { tex = "game_ui", x =  83, y = 1, w = 42, h = 42 },
+        pause_button_down = { tex = "game_ui", x = 126, y = 1, w = 42, h = 42 },
+        timebar           = { tex = "game_ui", x = 1, y = 44, w = 264, h = 22 },
+        timebar_bg        = { tex = "game_ui", x = 1, y = 67, w = 266, h = 24 },
+        image_bg          = { tex = "game_ui", x = 1, y = 92, w = 287, h = 417 },
+
+        image_1a = { tex = "image_1a", x = 0, y = 0, w = 285, h = 415 },
+        image_1b = { tex = "image_1b", x = 0, y = 0, w = 285, h = 415 },
     },
 
     -- BMFont (AngelCode) bitmap fonts. Each entry points at a .fnt text file;

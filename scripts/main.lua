@@ -1,104 +1,101 @@
--- Find5 engine demo — exercises every binding so it's clear what works.
--- The actual difference-finder game is laid out in docs/game-plan.md;
--- when you start building it, replace this file.
---
--- Hooks (all optional):
---   on_start(), on_update(dt), on_render(),
---   on_keydown(name), on_keyup(name),
---   on_mousedown(x, y, button), on_mouseup(x, y, button),
---   on_mousemove(x, y, dx, dy)
---
--- Bindings:
---   draw_region(name, x, y [, opts])    -- opts: align, flip, fill_x/y, scale, alpha, color
---   draw_text(text, x, y [, opts])      -- opts: scale, font, align, color, alpha
---   draw_ellipse(cx, cy, rx, ry [, opts])  -- opts: start, finish, segments, thickness, color, alpha
---   key_down(name), mouse_pos(), mouse_down(button)
---   snd_play(name)
---   music_play(name [, fade [, loop]]), music_stop([fade]), music_volume(g)
---   ui_show_message(text [, seconds])
+-- Find5 — game mockup.
+-- Static frame matching docs/game-mockup.png: HUD top row (level / joker
+-- counter / score / pause), timer bar, two portraits with image_bg
+-- frames, and a couple of green "found" markers. No interactivity yet;
+-- click around once the gameplay state machine is wired up.
 
-local player = { x = 0, y = 0, speed = 220 }
-local t = 0                  -- demo timer
-local found_t = nil          -- ellipse-drawing animation timer (nil = not active)
+local state = {
+    level       = 3,
+    level_count = 10,
+    score       = 12345,
+    jokers      = 3,            -- remaining
+    joker_max   = 5,
+    time_left   = 35,
+    time_total  = 60,
+    -- Difference positions in portrait-local coords (centered on each image).
+    -- Same coordinates apply to both image_1a and image_1b — that's the
+    -- point of spot-the-difference; the engine just draws the marker on
+    -- both portraits.
+    found       = {
+        { x = -60, y = -120 },
+        { x =  40, y =   30 },
+    },
+}
 
--- Persistence demo: count how many times the engine has booted, persist
--- the player's last position, show both in the welcome message. Press P
--- during the game to save the current position immediately.
-local boot_count = opt_get("boot_count", 0) + 1
-opt_set("boot_count", boot_count)
-local saved = opt_get("last_pos", { x = 0, y = 0 })
-player.x, player.y = saved.x, saved.y
-opt_save()                   -- one save right at startup so find5.dat appears
+-- Layout constants — y is down on the virtual canvas (UI_VIRTUAL_H = 480),
+-- center origin, so the visible range is roughly -240..+240 vertically.
+local HUD_Y       = -224     -- top-row text baseline-ish
+local HUD_TOP_Y   = -228     -- icon top edge (anchored TOP)
+local BAR_Y       = -192     -- timebar_bg top edge
+local IMG_Y       =   38     -- portrait center y
+local IMG_LEFT_X  = -148     -- left portrait center x
+local IMG_RIGHT_X =  148     -- right portrait center x
 
 function on_start()
-    ui_show_message(
-        string.format("Boot #%d. Last pos: (%.0f, %.0f). Press P to save now.",
-                      boot_count, saved.x, saved.y), 6)
     music_play("title", 0.5, true)
 end
 
-function on_update(dt)
-    t = t + dt
-    if key_down("left")  or key_down("a") then player.x = player.x - player.speed * dt end
-    if key_down("right") or key_down("d") then player.x = player.x + player.speed * dt end
-    if key_down("up")    or key_down("w") then player.y = player.y - player.speed * dt end
-    if key_down("down")  or key_down("s") then player.y = player.y + player.speed * dt end
-
-    if found_t then
-        found_t = found_t + dt
-        if found_t > 1.5 then found_t = nil end
-    end
-end
-
 function on_render()
-    -- Logo with a slow pulse (scale wobble) and a sinking alpha while space is held.
-    local pulse = 1.0 + 0.05 * math.sin(t * 3)
-    local alpha = key_down("space") and (0.3 + 0.7 * (math.sin(t * 8) * 0.5 + 0.5)) or 1.0
+    -- ---- Backdrop: blurred color summary of the left portrait. ----
+    draw_blur("image_1a", { width = 16, alpha = 0.6 })
 
-    draw_region("logo", player.x, player.y, {
-        align = ALIGN_CENTER + ALIGN_MIDDLE,
-        scale = pulse,
-        alpha = alpha,
+    -- ---- HUD top row ----
+    -- Level "3/10" — top-left.
+    draw_text(string.format("%d/%d", state.level, state.level_count),
+              -300, HUD_Y)
+
+    -- Joker star + "remaining/max" counter, left of center.
+    draw_region("joker", -130, HUD_TOP_Y, {
+        align = ALIGN_CENTER + ALIGN_TOP,
+    })
+    draw_text(string.format("%d/%d", state.jokers, state.joker_max),
+              -100, HUD_Y)
+
+    -- Score, right-aligned, sits just left of the pause button.
+    draw_text(tostring(state.score), 232, HUD_Y, { align = ALIGN_RIGHT })
+
+    -- Pause button — top-right corner.
+    draw_region("pause_button_up", 295, HUD_TOP_Y, {
+        align = ALIGN_CENTER + ALIGN_TOP,
     })
 
-    -- HUD-style label, top-left. White, default font at native size.
-    draw_text("Find5 engine demo", -310, -230)
-
-    -- Centered prompt, default font at 1.5x native, semi-transparent.
-    draw_text("press F to trigger find animation", 0, 200, {
-        align = ALIGN_CENTER + ALIGN_MIDDLE,
-        color = { 1.0, 1.0, 0.6, 0.8 },
+    -- ---- Timer bar ----
+    -- timebar_bg is 2px bigger than timebar; drawing both centered puts the
+    -- foreground 1px inside the background. fill_x shrinks the foreground
+    -- from the right as time_left / time_total drops toward zero.
+    draw_region("timebar_bg", 0, BAR_Y, {
+        align = ALIGN_CENTER + ALIGN_TOP,
+    })
+    draw_region("timebar", 0, BAR_Y + 1, {
+        align = ALIGN_CENTER + ALIGN_TOP,
+        fill_x = state.time_left / state.time_total,
     })
 
-    -- Ellipse "drawing" animation: when found_t is active, sweep finish from 0 to 1.
-    if found_t then
-        local p = found_t / 0.6                  -- 0..1 over 0.6 seconds
-        if p > 1 then p = 1 end
-        local fade = 1 - math.max(0, (found_t - 0.8) / 0.7)  -- fade after 0.8s
-        draw_ellipse(player.x, player.y, 80, 30, {
-            finish    = p,
-            thickness = 3.0,
-            color     = { 1.0, 0.3, 0.3, fade },
-            segments  = 80,
+    -- ---- Portraits with frame ----
+    -- image_bg is 287×417, drawn first; portrait (285×415) drawn on top
+    -- centered at the same point → image_bg shows as a 1px frame around it.
+    draw_region("image_bg", IMG_LEFT_X, IMG_Y, {
+        align = ALIGN_CENTER + ALIGN_MIDDLE,
+    })
+    draw_region("image_1a", IMG_LEFT_X, IMG_Y, {
+        align = ALIGN_CENTER + ALIGN_MIDDLE,
+    })
+
+    draw_region("image_bg", IMG_RIGHT_X, IMG_Y, {
+        align = ALIGN_CENTER + ALIGN_MIDDLE,
+    })
+    draw_region("image_1b", IMG_RIGHT_X, IMG_Y, {
+        align = ALIGN_CENTER + ALIGN_MIDDLE,
+    })
+
+    -- ---- Found markers (green ellipses, mirrored on both portraits) ----
+    local green = { 0.3, 1.0, 0.4, 1.0 }
+    for _, p in ipairs(state.found) do
+        draw_ellipse(IMG_LEFT_X  + p.x, IMG_Y + p.y, 26, 19, {
+            thickness = 3, color = green,
         })
-    end
-end
-
-function on_keydown(name)
-    if name == "space" then snd_play("jump") end
-    if name == "f"     then found_t = 0 end       -- kick off ellipse animation
-    if name == "p" then
-        -- Save the current sprite position. Restart the game and it'll
-        -- come back where you left it.
-        opt_set("last_pos", { x = player.x, y = player.y })
-        opt_save()
-        ui_show_message(string.format("saved at (%.0f, %.0f)", player.x, player.y), 2)
-    end
-end
-
-function on_mousedown(x, y, button)
-    if button == 1 then
-        found_t = 0
-        player.x, player.y = x, y                  -- teleport sprite to click
+        draw_ellipse(IMG_RIGHT_X + p.x, IMG_Y + p.y, 26, 19, {
+            thickness = 3, color = green,
+        })
     end
 end
