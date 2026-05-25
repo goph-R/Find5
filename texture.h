@@ -242,6 +242,16 @@ static GLuint texBlurGet(TexBlurCache *bc, const char *path,
     int downH = (int)((float)downW * (float)rh / (float)rw + 0.5f);
     if (downH < 1) downH = 1;
 
+    /* Round both dims up to the next power-of-two. GeForce 4 MX (and other
+       DX7-class hardware on the Win98 target) doesn't support NPOT
+       textures in hardware — uploading a 16×23 texture there silently
+       fails and leaves the bound texture undefined, which reads back as
+       the GL clear color. Rounding to 16×32 (etc.) costs ~zero pixels at
+       this scale and keeps the result drivable on every target. The mild
+       aspect bias is invisible after the cover-stretch to view width. */
+    { int p; for (p = 1; p < downW; p <<= 1) {} downW = p; }
+    { int p; for (p = 1; p < downH; p <<= 1) {} downH = p; }
+
     unsigned char *dst = (unsigned char *)malloc((size_t)downW * downH * 4);
     if (!dst) {
         stbi_image_free(src);
