@@ -50,10 +50,10 @@ Sound/music toggles are pure on/off — implementation: when sound is off, `snd_
   (-320, -240)                                                  (320, -240)
        ┌──────────────────────────────────────────────────────────┐
        │  TOP ROW  (≈ 60 units tall)                              │
-       │  ┌──────┐  ┌────────────────────────┐  ┌──────┐  ┌─────┐ │
-       │  │SCORE │  │  ════════ TIME ═══     │  │LEVEL │  │ ⏸  │ │
-       │  │ 4280 │  │  (shrinks left→right)  │  │ 3/10 │  │ btn │ │
-       │  └──────┘  └────────────────────────┘  └──────┘  └─────┘ │
+       │  ┌──────┐ ┌──────┐ ┌────────────────┐ ┌──────┐  ┌─────┐  │
+       │  │SCORE │ │FOUND │ │ ════ TIME ══   │ │LEVEL │  │ ⏸  │  │
+       │  │ 4280 │ │ 2/5  │ │ (shrinks L→R)  │ │ 3/10 │  │ btn │  │
+       │  └──────┘ └──────┘ └────────────────┘ └──────┘  └─────┘  │
        │                                                          │
        │  BOTTOM ROW  (≈ 400 units tall)                          │
        │  ┌──────────────┐    ┌───┐     ┌──────────────┐          │
@@ -75,9 +75,10 @@ Sound/music toggles are pure on/off — implementation: when sound is off, `snd_
 
 | Element       | x range        | y range        | Notes                                  |
 |---------------|----------------|----------------|----------------------------------------|
-| Score label   | -300 .. -240   | -230 .. -200   | text, right-padded numeric             |
-| Time bar      | -180 .. +180   | -225 .. -205   | uses `fill_x` to shrink                |
-| Level label   | +200 .. +260   | -230 .. -200   | "3/10" style                           |
+| Score label   | -300 .. -230   | -230 .. -200   | text, right-padded numeric             |
+| Found label   | -210 .. -150   | -230 .. -200   | "2/5" — differences found this level   |
+| Time bar      | -130 .. +130   | -225 .. -205   | uses `fill_x` to shrink                |
+| Level label   | +150 .. +220   | -230 .. -200   | "3/10" style                           |
 | Pause button  | +280 .. +310   | -230 .. -200   | 30×30 icon                             |
 | Portrait 1    | -310 .. -90    | -170 .. +220   | 220×390 (or whatever your art is)      |
 | Joker column  | -80 .. +80     | -170 .. +220   | 5 buttons stacked vertically           |
@@ -174,24 +175,41 @@ Use `math.random(1, #unused)` for picks — `math.random` is already seeded at b
 
 Held as a single `state` variable in `main.lua`. `on_update` dispatches by state; `on_render` draws the active layer(s) (e.g. PAUSED draws PLAYING dimmed underneath + the dialog on top).
 
+**Game-over reveal**: when time hits 0 the state goes `PLAYING → GAME_OVER_REVEAL → GAME_OVER`. In `GAME_OVER_REVEAL` the timer is frozen, input is ignored, and every still-unfound difference is drawn one after another with a **red** `draw_ellipse` (~0.25s stagger between starts, 0.4s draw each). After the last ellipse finishes plus ~0.8s of dwell, the GAME_OVER dialog scales/fades in as usual. This gives the player a chance to see what they missed before the dialog covers the portraits.
+
 ## Animations
 
 All tweens live Lua-side. Drop in a small tween library via `require "tween"` (the sandbox already permits this — see `scripts/?.lua` lookup path).
 
+Found / joker / game-over reveal all reuse the same `draw_ellipse` "drawing" animation (`finish` tweened 0 → 1) — only the color changes, so the player learns the visual language quickly.
+
 | Trigger                         | Animation                                                  | Duration |
 |---------------------------------|------------------------------------------------------------|----------|
-| Difference found                | `draw_ellipse` with `finish` tween 0 → 1 (the "drawing")   | 0.4s     |
+| Difference found (player click) | **Green** ellipse, `finish` 0 → 1, then fade out           | 0.4s + 0.7s fade |
+| Difference found                | Found counter bumps (e.g. 1/5 → 2/5), brief scale pop      | 0.2s     |
 | Difference found                | Optional fade-up score popup at the click point            | 0.6s     |
+| Joker pressed → reveals next    | **Yellow** ellipse on the auto-revealed difference         | 0.4s + 0.7s fade |
 | Joker button pressed            | Button: scale 1 → 1.3, alpha 1 → 0                         | 0.25s    |
 | Joker button pressed            | Empty-slot region underneath: alpha 0 → 1                  | 0.25s    |
 | Wrong click                     | Brief red flash on portrait (uiQuad with tweened alpha)    | 0.2s     |
-| Time low (last 5s)              | Time bar tint pulses to red                                | 0.5s loop |
+| Time low (last 10s) — audio     | `snd_play("tick")` once per second (tick / tock / tick…)   | each 1.0s |
+| Time low (last 10s) — visual    | Time bar fades out → in fast, **5 cycles over 10s** (one cycle every 2s; alpha 1 → 0.2 → 1, eased) | 2.0s × 5 |
+| Game over reveal (time up)      | **Red** ellipses on every unfound difference, drawn one after another (~0.25s stagger) | 0.4s each + dwell |
+| Game over reveal → dialog       | After last red ellipse finishes + ~0.8s dwell, dialog appears | 0.8s wait |
 | Level complete                  | Dialog: scale 0.6 → 1.0, alpha 0 → 1                       | 0.3s     |
 | Level complete                  | Score count-up: from current to (current + bonus)          | 1.5s     |
 | Pause dialog open               | Background dim (alpha 0 → 0.5 black quad)                  | 0.15s    |
 | Pause dialog open               | Dialog: scale 0.8 → 1.0, alpha 0 → 1                       | 0.2s     |
 | Pause dialog close              | reverse                                                    | 0.15s    |
 | Game over dialog                | same as pause dialog, plus the dim                         | 0.2s     |
+
+Suggested ellipse colors (premultiplied / straight RGBA, pick what matches the art):
+
+| Source      | Color (RGB)          | Meaning                                   |
+|-------------|----------------------|-------------------------------------------|
+| Player find | `{ 0.3, 1.0, 0.4 }`  | green — "you got it"                      |
+| Joker       | `{ 1.0, 0.9, 0.3 }`  | yellow — "the game gave you this one"     |
+| Game over   | `{ 1.0, 0.3, 0.3 }`  | red — "here's what you missed"            |
 
 Score bonus formula (suggestion): `bonus = floor(time_left * 10) + jokers_left * 50`. Adjust to feel right once the loop is playable.
 
@@ -219,7 +237,7 @@ Centered rect (background = a `dialog_bg` region tiled or stretched). Contains:
 - Click outside dialog or press Esc to resume
 
 ### Game over dialog
-Title "GAME OVER" (or "TIME UP"). Two buttons: RESTART / HIGHSCORE. No resume — the run is over.
+Title "GAME OVER" (or "TIME UP"). Two buttons: RESTART / HIGHSCORE. No resume — the run is over. Shown **after** the GAME_OVER_REVEAL phase has drawn red ellipses on every unfound difference and waited a beat (see state machine notes).
 
 ### Level complete dialog
 Title "LEVEL N COMPLETE". Lines for "Time bonus: +XXX", "Joker bonus: +XXX", "Total score: XXXX" (animated count-up). One button: CONTINUE.
@@ -388,18 +406,18 @@ Roughly in build order — each step is testable before moving to the next.
 
 1. **Engine adds (shipped)**: scale + alpha + options-table on `draw_region`; `draw_text`; `draw_ellipse`; UI canvas to 480; `opt_set` / `opt_get` / `opt_save` / `opt_load`.
 2. **Background + portraits visible**: draw `bg` full-canvas, draw one hardcoded image pair at portrait positions. Static. No input.
-3. **Time bar + score/level labels**: `draw_region` with `fill_x` for the time bar; `draw_text` for the labels.
-4. **Difference hit-test**: click on portrait 1 → if within 25 units of any unfound difference, mark it found and trigger the ellipse animation.
-5. **Joker buttons**: 5 buttons stacked. Click reveals one unfound difference. On click: button scale-up + fade-out, empty slot fades in.
+3. **Time bar + score/level/found labels**: `draw_region` with `fill_x` for the time bar; `draw_text` for the score, the `2/5` found counter, and the `3/10` level counter.
+4. **Difference hit-test**: click on portrait 1 → if within 25 units of any unfound difference, mark it found, bump the found counter, trigger the **green** ellipse animation.
+5. **Joker buttons**: 5 buttons stacked. Click auto-reveals one unfound difference with a **yellow** ellipse animation. On click: button scale-up + fade-out, empty slot fades in.
 6. **Level complete**: when remaining == 0 → LEVEL_COMPLETE state. Dialog scales/fades in. Score count-up animation.
 7. **Continue → next level** within a run (still one category, still one image pool).
 8. **Pause dialog**: Esc or pause button → PAUSED. Dim + dialog. Restart / Highscore / Exit.
-9. **Game over** (time-up): show dialog, Restart / Highscore.
+9. **Game over** (time-up): enter `GAME_OVER_REVEAL` → red ellipses on every unfound difference (staggered) → ~0.8s dwell → game-over dialog (Restart / Highscore).
 10. **Level config from data**: replace hardcoded numbers with `scripts/levels.lua` (single category for now).
 11. **Multi-category**: add the rest of the categories to `levels.lua`. Pick category programmatically at boot.
 12. **Title screen**: logo + category preview + arrows + sound/music toggles + START + highscore button. State machine entry point. Persists `last_category` via `opt_set` + `opt_save`.
 13. **Random image picking + used-images set**: pick from category's pool excluding `used_images[cat_id]`; reset when empty. Persist on each pick.
 14. **Highscore screen**: per-category top-N list, reachable from title and from post-game dialogs. Saving new scores triggered automatically on GAME_OVER / ALL_DONE.
-15. **Sound polish**: found / wrong / joker / tick / win SFX. Honor `settings.sound_on` / `settings.music_on` toggles.
+15. **Sound polish**: found / wrong / joker / **tick** (last-10s warning, once per second) / win SFX. Honor `settings.sound_on` / `settings.music_on` toggles.
 
 Each step is a couple of evenings of work. Suggest committing in order so you always have a runnable build.
