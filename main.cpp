@@ -182,8 +182,11 @@ int main(int argc, char *argv[])
     assetRegInit(&assetReg);
     TexCache texCache;
     texCacheInit(&texCache);
+    TexBlurCache blurCache;
+    texBlurInit(&blurCache);
     ScriptSystem script;
-    scriptInit(&script, &ui, &snd, &sndLib, &mus, &musLib, &assetReg, &texCache);
+    scriptInit(&script, &ui, &snd, &sndLib, &mus, &musLib, &assetReg,
+               &texCache, &blurCache);
     scriptLoadAssets(&script, "assets.lua");
     scriptInstallConsolePrint(&script);
 

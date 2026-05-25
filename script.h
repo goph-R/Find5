@@ -37,7 +37,8 @@ struct ScriptSystem {
     MusicSystem   *music;
     MusicLibrary  *musLib;
     AssetRegistry *assets;
-    TexCache      *texCache;  /* shared cache for draw_sprite's lazy PNG loads */
+    TexCache      *texCache;   /* shared cache for draw_sprite's lazy PNG loads */
+    TexBlurCache  *blurCache;  /* downsampled color-summary textures (draw_blur) */
 };
 
 /* ---- C bindings ---- */
@@ -510,6 +511,70 @@ static int scr_draw_bg(lua_State *L)
     return 0;
 }
 
+/* draw_blur(name [, opts])
+ * Draws a blurred "color summary" of the named region as a backdrop:
+ * downsamples the source PNG to `width` × (aspect-derived height), uploads
+ * it once (cached), then stretches the tiny texture to fill the view width
+ * and centers it vertically. Stretching a 16×27 texture up to ~640 px wide
+ * produces smooth color gradients between the few sample points — the
+ * source image's dominant colors smeared across the screen.
+ *
+ *   width  (number) downsample width in pixels (default 16, max 64).
+ *                   Height is derived from the source aspect ratio.
+ *   alpha  (number) draw alpha (default 0.6).
+ *
+ * The first call per (path, width) pair pays the decode + downsample cost
+ * (~ms even on Win98). Subsequent calls hit the blur cache. */
+static int scr_draw_blur(lua_State *L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, "find5.sys");
+    ScriptSystem *s = (ScriptSystem *)lua_touserdata(L, -1);
+    lua_pop(L, 1);
+
+    const char *name = luaL_checkstring(L, 1);
+    int   downW = 16;
+    float alpha = 0.6f;
+    if (lua_istable(L, 2)) {
+        downW = scr_optfield_int(L, 2, "width", 16);
+        alpha = scr_optfield_num(L, 2, "alpha", 0.6f);
+    }
+
+    const Region *rg = assetRegFindRegion(s->assets, name);
+    if (!rg) {
+        conLogf("draw_blur: unknown region '%s'\n", name);
+        return 0;
+    }
+    const char *texPath = assetRegResolveTexture(s->assets, rg->texName);
+    if (!texPath) return 0;
+
+    /* Source dimensions come from the regular tex cache (or a fresh load
+       if this is the first reference to the file). We need them to
+       compute the dst aspect — the blur cache uses them too internally
+       but doesn't expose them. */
+    int srcW = 0, srcH = 0;
+    texCacheGetA(s->texCache, texPath, GL_CLAMP_TO_EDGE, 1, &srcW, &srcH);
+    if (srcW <= 0 || srcH <= 0) return 0;
+
+    GLuint tex = texBlurGet(s->blurCache, texPath, downW);
+    if (!tex) return 0;
+
+    /* Stretch to view width, preserve source aspect, center vertically.
+       For a taller-than-wide portrait at 16:27 the height overruns the
+       canvas — exactly what we want, the blurred color fills top-to-bottom. */
+    float vw = uiGetWidth(s->ui);
+    float dst_w = vw;
+    float dst_h = vw * (float)srcH / (float)srcW;
+
+    UiRect dr;
+    dr.x = -dst_w * 0.5f;
+    dr.y = -dst_h * 0.5f;
+    dr.w = dst_w;
+    dr.h = dst_h;
+    uiIconUVColor(dr, tex, 0.0f, 0.0f, 1.0f, 1.0f,
+                  1.0f, 1.0f, 1.0f, alpha);
+    return 0;
+}
+
 /* ---- Options / persistence ----
  *
  * Key-value store backed by a single file `find5.dat` next to the exe.
@@ -841,15 +906,16 @@ static int scr_traceback(lua_State *L)
 static int scriptInit(ScriptSystem *s, UiState *ui, SoundSystem *snd,
                       SoundLibrary *sndLib, MusicSystem *music,
                       MusicLibrary *musLib, AssetRegistry *reg,
-                      TexCache *texCache)
+                      TexCache *texCache, TexBlurCache *blurCache)
 {
-    s->ui       = ui;
-    s->snd      = snd;
-    s->sndLib   = sndLib;
-    s->music    = music;
-    s->musLib   = musLib;
-    s->assets   = reg;
-    s->texCache = texCache;
+    s->ui        = ui;
+    s->snd       = snd;
+    s->sndLib    = sndLib;
+    s->music     = music;
+    s->musLib    = musLib;
+    s->assets    = reg;
+    s->texCache  = texCache;
+    s->blurCache = blurCache;
 
     s->L = luaL_newstate();
     if (!s->L) {
@@ -874,6 +940,7 @@ static int scriptInit(ScriptSystem *s, UiState *ui, SoundSystem *snd,
     lua_register(s->L, "draw_text",       scr_draw_text);
     lua_register(s->L, "draw_ellipse",    scr_draw_ellipse);
     lua_register(s->L, "draw_bg",         scr_draw_bg);
+    lua_register(s->L, "draw_blur",       scr_draw_blur);
     lua_register(s->L, "view_size",       scr_view_size);
     lua_register(s->L, "opt_set",         scr_opt_set);
     lua_register(s->L, "opt_get",         scr_opt_get);
