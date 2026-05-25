@@ -17,6 +17,7 @@ local STATE_PAUSED           = "paused"
 local STATE_LEVEL_COMPLETE   = "level_complete"
 local STATE_GAME_OVER_REVEAL = "game_over_reveal"
 local STATE_GAME_OVER        = "game_over"
+local STATE_ALL_DONE         = "all_done"
 
 -- ---- Tunables -------------------------------------------------------------
 local DIFF_COUNT             = LEVELS.diff_count
@@ -29,23 +30,29 @@ local REVEAL_DWELL           = 0.8   -- pause after the last reveal before GAME_
 local POST_WIN_DELAY         = 0.5   -- swallow the click that triggered LEVEL_COMPLETE
 local LOW_TIME_THRESHOLD     = 10.0  -- seconds at which the timebar starts pulsing
 local LOW_TIME_CYCLE         = 2.0   -- one fade cycle (1.0 → 0.2 → 1.0) takes this long
+local FIND_POINTS            = 100   -- per-diff bonus on find (click or joker)
+local SCORE_COUNT_DURATION   = 1.5   -- level-end bonus count-up
+local SCORE_POPUP_DURATION   = 0.9   -- "+N" float-and-fade
+local SCORE_POPUP_RISE       = 30    -- virtual px the "+N" floats upward
 
 -- ---- State ----------------------------------------------------------------
 local state = {
-    level       = 1,
-    level_count = LEVELS.level_count,
-    score       = 0,
-    jokers      = LEVELS.joker_max,
-    joker_max   = LEVELS.joker_max,
-    time_total  = LEVELS.time_start,
-    time_left   = LEVELS.time_start,
-    diffs       = current_diffs,
-    found       = {},
-    miss_flash  = 0,
-    joker_press = 0,
-    mode        = STATE_PLAYING,
-    reveal_t    = 0,    -- secs elapsed since entering GAME_OVER_REVEAL
-    win_t       = 0,    -- secs elapsed since entering LEVEL_COMPLETE
+    level        = 1,
+    level_count  = LEVELS.level_count,
+    score        = 0,
+    jokers       = LEVELS.joker_max,
+    joker_max    = LEVELS.joker_max,
+    time_total   = LEVELS.time_start,   -- set per-level by startLevel()
+    time_left    = LEVELS.time_start,
+    diffs        = current_diffs,
+    found        = {},
+    miss_flash   = 0,
+    joker_press  = 0,
+    mode         = STATE_PLAYING,
+    reveal_t     = 0,                   -- secs in GAME_OVER_REVEAL
+    win_t        = 0,                   -- secs in LEVEL_COMPLETE
+    score_popups = {},                  -- floating "+N" texts: { x, y, value, t }
+    score_anim   = nil,                 -- level-end count-up: { from, to, t }
 }
 
 -- ---- Layout (virtual canvas: UI_VIRTUAL_H = 480, center origin, Y-down) ----
@@ -120,20 +127,64 @@ local function unfoundCount()
     return DIFF_COUNT - #state.found
 end
 
-local function resetLevel()
-    state.found       = {}
-    state.time_left   = state.time_total
-    state.jokers      = state.joker_max
-    state.miss_flash  = 0
-    state.joker_press = 0
-    state.reveal_t    = 0
-    state.win_t       = 0
-    state.mode        = STATE_PLAYING
+-- Time budget for level `n` lerped linearly from LEVELS.time_start at level 1
+-- to LEVELS.time_end at level_count. Single-level runs just use time_start.
+local function levelTimeBudget(n)
+    if LEVELS.level_count <= 1 then return LEVELS.time_start end
+    local f = (n - 1) / (LEVELS.level_count - 1)
+    if f < 0 then f = 0 elseif f > 1 then f = 1 end
+    return LEVELS.time_start + (LEVELS.time_end - LEVELS.time_start) * f
+end
+
+-- Per-level reset. Doesn't touch state.score — the score persists across
+-- levels through a run.
+local function startLevel(n)
+    state.level        = n
+    state.time_total   = levelTimeBudget(n)
+    state.time_left    = state.time_total
+    state.jokers       = state.joker_max
+    state.found        = {}
+    state.miss_flash   = 0
+    state.joker_press  = 0
+    state.reveal_t     = 0
+    state.win_t        = 0
+    state.score_popups = {}
+    state.score_anim   = nil
+    state.mode         = STATE_PLAYING
+end
+
+local function settleScoreAnim()
+    if state.score_anim then
+        state.score = state.score_anim.to
+        state.score_anim = nil
+    end
+end
+
+-- Continue past LEVEL_COMPLETE. Wraps to STATE_ALL_DONE after the final
+-- level; otherwise advances and resets.
+local function continueToNextLevel()
+    settleScoreAnim()
+    if state.level >= LEVELS.level_count then
+        state.mode = STATE_ALL_DONE
+    else
+        startLevel(state.level + 1)
+    end
+end
+
+-- Reset back to level 1 fresh. Used by GAME_OVER → retry and ALL_DONE → play
+-- again. Both wipe the score.
+local function newRun()
+    state.score = 0
+    startLevel(1)
 end
 
 local function enterLevelComplete()
     state.mode  = STATE_LEVEL_COMPLETE
     state.win_t = 0
+    local time_bonus  = math.floor(state.time_left * 10)
+    local joker_bonus = state.jokers * 50
+    local bonus       = time_bonus + joker_bonus
+    state.score_anim  = { from = state.score, to = state.score + bonus, t = 0 }
 end
 
 local function enterGameOverReveal()
@@ -143,6 +194,25 @@ end
 
 local function enterPaused()   state.mode = STATE_PAUSED  end
 local function resumePlaying() state.mode = STATE_PLAYING end
+
+-- Add a "+N" floating text at canvas (x, y) tied to the next on_render.
+local function pushScorePopup(x, y, value)
+    table.insert(state.score_popups, { x = x, y = y, value = value, t = 0 })
+end
+
+-- Common path for both player-click finds and joker reveals. Pushes the
+-- ellipse animation, awards FIND_POINTS, and spawns the "+N" at the
+-- diff's center on the left portrait.
+local function awardFind(d, by_joker)
+    table.insert(state.found, {
+        x = d.x, y = d.y, w = d.w, h = d.h,
+        joker = by_joker, t = 0,
+    })
+    state.score = state.score + FIND_POINTS
+    pushScorePopup(IMG_LEFT_X + d.x + d.w / 2,
+                   IMG_Y      + d.y + d.h / 2,
+                   FIND_POINTS)
+end
 
 -- ---- Hooks ----------------------------------------------------------------
 
@@ -170,6 +240,29 @@ function on_update(dt)
     if state.joker_press > 0 then
         state.joker_press = state.joker_press - dt
         if state.joker_press < 0 then state.joker_press = 0 end
+    end
+
+    -- Score count-up animation (set by enterLevelComplete). Updates the
+    -- displayed state.score; settles to .to once the duration elapses.
+    if state.score_anim then
+        state.score_anim.t = state.score_anim.t + dt
+        if state.score_anim.t >= SCORE_COUNT_DURATION then
+            state.score = state.score_anim.to
+            state.score_anim = nil
+        else
+            local f = state.score_anim.t / SCORE_COUNT_DURATION
+            state.score = math.floor(state.score_anim.from
+                                  + (state.score_anim.to - state.score_anim.from) * f)
+        end
+    end
+
+    -- "+N" floating popups: walk in reverse so removal-by-index is safe.
+    for i = #state.score_popups, 1, -1 do
+        local p = state.score_popups[i]
+        p.t = p.t + dt
+        if p.t > SCORE_POPUP_DURATION then
+            table.remove(state.score_popups, i)
+        end
     end
 
     if state.mode == STATE_PLAYING then
@@ -209,13 +302,15 @@ function on_mousedown(x, y, button)
         return
     end
 
-    -- Terminal states swallow clicks to restart, no other action runs.
+    -- Terminal states swallow clicks. LEVEL_COMPLETE advances to the next
+    -- level (or to ALL_DONE after the final one); GAME_OVER and ALL_DONE
+    -- restart the run from level 1 with score = 0.
     if state.mode == STATE_LEVEL_COMPLETE then
-        if state.win_t >= POST_WIN_DELAY then resetLevel() end
+        if state.win_t >= POST_WIN_DELAY then continueToNextLevel() end
         return
     end
-    if state.mode == STATE_GAME_OVER then
-        resetLevel()
+    if state.mode == STATE_GAME_OVER or state.mode == STATE_ALL_DONE then
+        newRun()
         return
     end
     if state.mode ~= STATE_PLAYING then return end  -- game_over_reveal: input locked
@@ -234,10 +329,7 @@ function on_mousedown(x, y, button)
         if state.jokers > 0 then
             local d = firstUnfound()
             if d then
-                table.insert(state.found, {
-                    x = d.x, y = d.y, w = d.w, h = d.h,
-                    joker = true, t = 0,
-                })
+                awardFind(d, true)
                 state.jokers = state.jokers - 1
             end
         else
@@ -251,10 +343,7 @@ function on_mousedown(x, y, button)
 
     for _, d in ipairs(state.diffs) do
         if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
-            table.insert(state.found, {
-                x = d.x, y = d.y, w = d.w, h = d.h,
-                joker = false, t = 0,
-            })
+            awardFind(d, false)
             return
         end
     end
@@ -382,6 +471,18 @@ function on_render()
         })
     end
 
+    -- ---- Floating "+N" score popups (one per find) ----
+    for _, p in ipairs(state.score_popups) do
+        local f = p.t / SCORE_POPUP_DURATION
+        if f > 1 then f = 1 end
+        local alpha = 1 - f
+        local dy    = -SCORE_POPUP_RISE * f
+        draw_text(string.format("+%d", p.value), p.x, p.y + dy, {
+	      align = ALIGN_CENTER + ALIGN_MIDDLE,
+	      color = { 0.4, 1.0, 0.5, alpha }
+	    })
+    end
+
     -- ---- Game-over reveal: red ellipses on unfound diffs, staggered ----
     if state.mode == STATE_GAME_OVER_REVEAL or state.mode == STATE_GAME_OVER then
         local i = 0
@@ -418,7 +519,7 @@ function on_render()
     -- then center a title in the large font; show a "click to ..." hint
     -- under it once the input is unlocked.
     if state.mode == STATE_LEVEL_COMPLETE or state.mode == STATE_GAME_OVER
-       or state.mode == STATE_PAUSED then
+       or state.mode == STATE_PAUSED or state.mode == STATE_ALL_DONE then
         local vw, vh = view_size()
         draw_quad(-vw / 2, -vh / 2, vw, vh, {
             color = { 0, 0, 0, 0.6 },
@@ -431,6 +532,10 @@ function on_render()
         elseif state.mode == STATE_GAME_OVER then
             title = "GAME OVER"
             hint  = "click to retry"
+        elseif state.mode == STATE_ALL_DONE then
+            title = "RUN COMPLETE!"
+            hint  = string.format("Final score: %d  -  click to play again",
+                                  state.score)
         else  -- STATE_PAUSED
             title = "PAUSED"
             hint  = "click to resume"
