@@ -66,6 +66,16 @@ function on_start()
     -- music_play("title", 0.5, true)
 end
 
+function on_update(dt)
+    -- Tick the countdown. Clamp at 0 so the timebar's fill_x doesn't
+    -- go negative once we run out. Game-over reveal lands in a later
+    -- step; for now the bar just empties and stays empty.
+    if state.time_left > 0 then
+        state.time_left = state.time_left - dt
+        if state.time_left < 0 then state.time_left = 0 end
+    end
+end
+
 function on_render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
     draw_blur("image_1a", { width = 16, alpha = 0.6 })
