@@ -220,7 +220,9 @@ Found / joker / game-over reveal all reuse the same `draw_ellipse` "drawing" ani
 | Difference found                | Optional fade-up score popup at the click point            | 0.6s     |
 | Joker button pressed            | Button: `joker_button_up` → `joker_button_down` for 0.1s, then back; counter ticks down | 0.1s |
 | Joker reveals next unfound diff | **Yellow** ellipse, `finish` 0 → 1; stays drawn after; star fills too (same pop) | 0.4s draw |
-| Wrong click                     | Brief red flash on portrait (uiQuad with tweened alpha)    | 0.2s     |
+| Wrong click — audio             | `snd_play("wrong")`                                        | one-shot |
+| Wrong click — visual            | **Full-screen** red fade: red quad over the whole view, alpha 0.5 → 0 eased out | 0.4s |
+| Wrong click — penalty           | `time_left` decreases by `time_total / 4` (clamped to 0)   | instant  |
 | Time low (last 10s) — audio     | `snd_play("tick")` once per second (tick / tock / tick…)   | each 1.0s |
 | Time low (last 10s) — visual    | Time bar fades out → in fast, **5 cycles over 10s** (one cycle every 2s; alpha 1 → 0.2 → 1, eased) | 2.0s × 5 |
 | Game over reveal (time up)      | **Red** ellipses on every unfound difference, drawn one after another (~0.25s stagger) | 0.4s each + dwell |
@@ -242,6 +244,18 @@ Suggested ellipse colors (premultiplied / straight RGBA, pick what matches the a
 
 Score bonus formula (suggestion): `bonus = floor(time_left * 10) + jokers_left * 50`. Adjust to feel right once the loop is playable.
 
+### Miss-click penalty
+
+When the player clicks **on a portrait** but the click misses every still-unfound diff rect, three things fire at once:
+
+- `snd_play("wrong")` — short negative SFX.
+- A red full-screen quad fades from `alpha = 0.5` to `0` over 0.4s (eased out), so the whole view briefly flashes red.
+- `time_left` drops by `time_total / 4`, clamped at 0.
+
+The penalty is sized so the player can absorb **at most 3 miss-clicks** in a level before the timer would zero out from misses alone (4 × ¼ = 1.0 of the budget). Combined with the natural clock drain, in practice that's the upper bound on sloppy play before game-over fires.
+
+Clicks **outside both portrait rects** (HUD area, between portraits, off-canvas) are ignored — no penalty, no sound, no flash.
+
 ## Input
 
 The engine routes SDL events to Lua hooks; the game uses:
@@ -249,13 +263,12 @@ The engine routes SDL events to Lua hooks; the game uses:
 - `on_mousedown(x, y, button)` — hit-test against:
   - Pause button rect (top-right)
   - Joker button rect (single button below the star column)
-  - Portrait 1 rect (find-the-difference click)
-  - Portrait 2 rect — wrong side, but valid click; treat as wrong-click
+  - Portrait 1 / Portrait 2 rects — either counts as a find click; miss → penalty (see below)
   - Dialog buttons when a dialog is up
 - `on_update(dt)` — tick the timer, advance active tweens, check for time-out and level-complete.
 - `on_keydown("escape")` — pause / unpause.
 
-Difference hit-test on portrait 1: the click is in canvas coords; subtract the portrait's origin to get a local position, then check whether it falls inside any unfound difference's `{x, y, w, h}` rect. On hit: append `{ x, y, w, h, joker = false }` to `state.found`, kick off the green ellipse animation, fill the next progress star.
+Difference hit-test: the click is in canvas coords; resolve which portrait (left or right) it falls on, subtract that portrait's top-left origin to get a portrait-local position, then check whether it falls inside any unfound difference's `{x, y, w, h}` rect. Either portrait counts — the diff is in the same place on both images. On hit: append `{ x, y, w, h, joker = false }` to `state.found`, kick off the green ellipse animation, fill the next progress star. On miss (click on a portrait but no unfound rect matched): trigger the miss-click penalty — see "Miss-click penalty" above.
 
 Joker press: pick the first **unfound** difference (e.g. first in `state.diffs` that isn't already in `state.found`), append `{ x, y, w, h, joker = true }` to `state.found`, kick off the yellow ellipse animation, fill the next star, decrement `state.jokers`. No-op (or short blip) if `state.jokers == 0`.
 
