@@ -13,6 +13,7 @@ local state = {
     time_left   = 35,
     time_total  = 60,
     miss_flash  = 0,            -- seconds of red-overlay fade remaining (0 = idle)
+    joker_press = 0,            -- seconds of joker_button_down feedback remaining
     -- All 5 difference rects for the current portrait pair (image_1a / image_1b).
     -- Coords are portrait-local pixels (top-left origin, image is 285×415).
     -- Same rects apply to both portraits — that's the whole spot-the-difference
@@ -71,9 +72,11 @@ function on_start()
     -- music_play("title", 0.5, true)
 end
 
+local DIFF_COUNT = 5     -- fixed constant; matches #state.diffs and the star slots
 local MISS_FLASH_DURATION = 0.4
 local MISS_FLASH_MAX_ALPHA = 0.5
 local ELLIPSE_DRAW_DURATION = 0.4
+local JOKER_PRESS_DURATION = 0.1   -- joker_button_down hold time on click
 
 function on_update(dt)
     -- Tick the countdown. Clamp at 0 so the timebar's fill_x doesn't
@@ -95,6 +98,11 @@ function on_update(dt)
             f.t = f.t + dt
             if f.t > ELLIPSE_DRAW_DURATION then f.t = ELLIPSE_DRAW_DURATION end
         end
+    end
+    -- Joker button "press" feedback timer.
+    if state.joker_press > 0 then
+        state.joker_press = state.joker_press - dt
+        if state.joker_press < 0 then state.joker_press = 0 end
     end
 end
 
@@ -137,10 +145,37 @@ local function clickToPortraitLocal(x, y)
     return nil
 end
 
+-- Pick the first diff that isn't in state.found yet. Returns nil if all
+-- five are already uncovered.
+local function firstUnfound()
+    for _, d in ipairs(state.diffs) do
+        if not isFound(d) then return d end
+    end
+    return nil
+end
+
 function on_mousedown(x, y, button)
     if button ~= 1 then return end
     if #state.found >= 5 then return end
     if state.time_left <= 0 then return end
+
+    -- Joker button — single 42×42 rect at (JOKER_BTN_X, JOKER_BTN_Y).
+    -- Tested first so a button click never falls through to portrait
+    -- hit-testing. No-op if the jokers counter is empty.
+    if pointInRect(x, y, JOKER_BTN_X, JOKER_BTN_Y, 42, 42) then
+        state.joker_press = JOKER_PRESS_DURATION  -- press feedback regardless
+        if state.jokers > 0 then
+            local d = firstUnfound()
+            if d then
+                table.insert(state.found, {
+                    x = d.x, y = d.y, w = d.w, h = d.h,
+                    joker = true, t = 0,
+                })
+                state.jokers = state.jokers - 1
+            end
+        end
+        return
+    end
 
     local lx, ly = clickToPortraitLocal(x, y)
     if not lx then return end   -- click landed off-portrait — ignore for now
@@ -230,8 +265,11 @@ function on_render()
     -- Pause button — top-right corner.
     draw_region("pause_button_up", PAUSE_BTN_X, PAUSE_BTN_Y)
 
-    -- Joker button — center-bottom
-    draw_region("joker_button_up", JOKER_BTN_X, JOKER_BTN_Y)
+    -- Joker button — center-bottom. Press flash swaps to the "_down" art
+    -- briefly after each click; otherwise the "_up" art sits idle.
+    local joker_btn = (state.joker_press > 0) and "joker_button_down"
+                                              or  "joker_button_up"
+    draw_region(joker_btn, JOKER_BTN_X, JOKER_BTN_Y)
 
     -- ---- Timer bar ----
     -- timebar_bg (266×24) is drawn centered; timebar (264×22) is anchored
@@ -243,12 +281,13 @@ function on_render()
         fill_x = state.time_left / state.time_total,
     })
 
-    -- ---- Stars
-    draw_region("star", STAR_X, IMG_Y)
-    draw_region("star", STAR_X, IMG_Y + (STAR_SIZE + 8))
-    draw_region("star_empty", STAR_X, IMG_Y + (STAR_SIZE + 8) * 2)
-    draw_region("star_empty", STAR_X, IMG_Y + (STAR_SIZE + 8) * 3)
-    draw_region("star_empty", STAR_X, IMG_Y + (STAR_SIZE + 8) * 4)
+    -- ---- Stars: 5 slots stacked, top-to-bottom. Slots <= #found render
+    -- filled (`star`), the rest empty (`star_empty`). One slot fills per
+    -- find regardless of whether it was a click or a joker reveal.
+    for i = 1, DIFF_COUNT do
+        local kind = (i <= #state.found) and "star" or "star_empty"
+        draw_region(kind, STAR_X, IMG_Y + (STAR_SIZE + 8) * (i - 1))
+    end
 
 
     -- ---- Portraits with frame ----
