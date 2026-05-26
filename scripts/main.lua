@@ -161,17 +161,75 @@ local function settleScoreAnim()
     end
 end
 
+-- Forward-declared so enterAllDone / enterGameOver can capture it as
+-- an upvalue for their Retry / Play-again button actions. The body
+-- comes further down; everything in between can refer to it.
+local newRun
+
 local function enterAllDone()
     state.mode = STATE_ALL_DONE
     -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
     -- once jokers became persistent — same jokers would have been counted
-    -- every level. Awarded once, here.
+    -- every level. Awarded once, here. The dialog body renders the count-up
+    -- via state.score_anim once intro_done.
     local joker_bonus = state.jokers * 50
+    state.joker_bonus = joker_bonus     -- snapshot for the dialog body
     if joker_bonus > 0 then
         state.score_anim = {
             from = state.score, to = state.score + joker_bonus, t = 0,
         }
     end
+
+    dialog.show({
+        title = "RUN COMPLETE!",
+        buttons = {
+            {
+                x = 0, y = 110, w = 240, h = 56,
+                region = "button_blue_up",
+                label  = "Play again",
+                action = newRun,
+            },
+        },
+        draw_body = function(intro_done, t, ax, ay)
+            if not intro_done then return end
+            draw_text(string.format("Joker bonus:  %d", state.joker_bonus or 0),
+                      ax, ay - 30, {
+                align = ALIGN_CENTER + ALIGN_MIDDLE,
+                color = { 1.0, 0.95, 0.5 },
+            })
+            draw_text(string.format("Final score:  %d", state.score),
+                      ax, ay + 30, {
+                align = ALIGN_CENTER + ALIGN_MIDDLE,
+                font  = "large",
+                color = { 1.0, 0.95, 0.2 },
+            })
+        end,
+    })
+end
+
+local function enterGameOver()
+    state.mode = STATE_GAME_OVER
+
+    dialog.show({
+        title = "GAME OVER",
+        buttons = {
+            {
+                x = 0, y = 110, w = 240, h = 56,
+                region = "button_blue_up",
+                label  = "Retry",
+                action = newRun,
+            },
+        },
+        draw_body = function(intro_done, t, ax, ay)
+            if not intro_done then return end
+            draw_text(string.format("Score:  %d", state.score),
+                      ax, ay, {
+                align = ALIGN_CENTER + ALIGN_MIDDLE,
+                font  = "large",
+                color = { 1.0, 0.95, 0.2 },
+            })
+        end,
+    })
 end
 
 -- Continue past LEVEL_COMPLETE. Wraps to STATE_ALL_DONE after the final
@@ -187,7 +245,7 @@ end
 
 -- Reset back to level 1 fresh. Used by GAME_OVER → retry and ALL_DONE → play
 -- again. Wipes score AND jokers (the session ended).
-local function newRun()
+newRun = function()
     state.score  = 0
     state.jokers = state.joker_max
     startLevel(1)
@@ -348,12 +406,12 @@ function on_update(dt)
         state.reveal_t = state.reveal_t + dt
         local n = unfoundCount()
         -- Reveal i starts at i*STAGGER (0-indexed), runs for DURATION,
-        -- then we hold for DWELL before showing the GAME_OVER text.
+        -- then we hold for DWELL before opening the GAME_OVER dialog.
         local need = (n > 0)
                      and ((n - 1) * REVEAL_STAGGER + ELLIPSE_DRAW_DURATION + REVEAL_DWELL)
                      or  REVEAL_DWELL
         if state.reveal_t >= need then
-            state.mode = STATE_GAME_OVER
+            enterGameOver()
         end
     end
 end
@@ -363,19 +421,13 @@ function on_mousedown(x, y, button)
 
     -- An active dialog owns clicks entirely — its button hit-tests run
     -- inside handle_click, and misses are swallowed (no fall-through
-    -- to game logic underneath the modal). PAUSE / LEVEL_COMPLETE both
-    -- route through here.
+    -- to game logic underneath the modal). PAUSE / LEVEL_COMPLETE /
+    -- GAME_OVER / ALL_DONE all route through here.
     if dialog.is_active() then
         dialog.handle_click(x, y)
         return
     end
 
-    -- Terminal states (no dialog yet) still use the placeholder text.
-    -- GAME_OVER / ALL_DONE restart the run from level 1 with score = 0.
-    if state.mode == STATE_GAME_OVER or state.mode == STATE_ALL_DONE then
-        newRun()
-        return
-    end
     if state.mode ~= STATE_PLAYING then return end  -- game_over_reveal: input locked
 
     -- Pause button — top-right, 42×42 at (PAUSE_BTN_X, PAUSE_BTN_Y). Tested
@@ -577,38 +629,7 @@ function on_render()
         })
     end
 
-    -- ---- Terminal-state overlays (placeholder text) ----
-    -- LEVEL_COMPLETE and PAUSED now own real dialogs. GAME_OVER and
-    -- ALL_DONE still use the placeholder text until their dialog specs
-    -- land — same dim, same centered title + hint convention.
-    if state.mode == STATE_GAME_OVER or state.mode == STATE_ALL_DONE then
-        local vw, vh = view_size()
-        draw_quad(-vw / 2, -vh / 2, vw, vh, {
-            color = { 0, 0, 0, 0.6 },
-        })
-
-        local title, hint
-        if state.mode == STATE_GAME_OVER then
-            title = "GAME OVER"
-            hint  = "click to retry"
-        else  -- STATE_ALL_DONE
-            title = "RUN COMPLETE!"
-            hint  = string.format("Final score: %d  -  click to play again",
-                                  state.score)
-        end
-
-        draw_text(title, 0, -20, {
-	      align = ALIGN_CENTER + ALIGN_MIDDLE,
-	      font  = "large",
-	      color = { 1, 1, 1 }
-	    })
-        draw_text(hint, 0, 30, {
-	      align = ALIGN_CENTER + ALIGN_MIDDLE,
-	      color = { 0.85, 0.85, 0.85 }
-	    })
-    end
-
     -- Dialog renders last so it sits above everything (HUD, portraits,
-    -- placeholder terminal overlays).
+    -- diff ellipses). All terminal states are dialogs now.
     dialog.render()
 end
