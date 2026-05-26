@@ -490,16 +490,6 @@ function on_render()
         draw_ellipse(IMG_RIGHT_X + p.x + p.w/2, IMG_Y + p.y + p.h/2, p.w/2, p.h/2, {
             finish = finish, thickness = 3, color = color,
         })
-        -- Click-position marker — small white dot at where the player
-        -- actually clicked, mirrored on both portraits. Skipped for
-        -- joker reveals (no click position to show).
-        if p.click_x then
-            local s = 3  -- half-size; renders as 6×6 quad
-            draw_quad(IMG_LEFT_X  + p.click_x - s, IMG_Y + p.click_y - s,
-                      s * 2, s * 2, { color = { 1, 1, 1, 1 } })
-            draw_quad(IMG_RIGHT_X + p.click_x - s, IMG_Y + p.click_y - s,
-                      s * 2, s * 2, { color = { 1, 1, 1, 1 } })
-        end
     end
 
     -- ---- Floating "+N" score popups (one per find) ----
