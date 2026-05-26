@@ -231,8 +231,8 @@ local function awardFind(d, by_joker, click_lx, click_ly, base_x)
         x = d.x, y = d.y, w = d.w, h = d.h,
         joker = by_joker, t = 0,
     })
-    state.score = state.score + FIND_POINTS
     if not by_joker then
+        state.score = state.score + FIND_POINTS
         pushScorePopup(base_x + click_lx, IMG_Y + 1 + click_ly, FIND_POINTS)
     end
 end
