@@ -136,13 +136,13 @@ local function levelTimeBudget(n)
     return LEVELS.time_start + (LEVELS.time_end - LEVELS.time_start) * f
 end
 
--- Per-level reset. Doesn't touch state.score — the score persists across
--- levels through a run.
+-- Per-level reset. Doesn't touch state.score or state.jokers — both
+-- persist across levels for the whole session. Jokers reset only on
+-- newRun().
 local function startLevel(n)
     state.level        = n
     state.time_total   = levelTimeBudget(n)
     state.time_left    = state.time_total
-    state.jokers       = state.joker_max
     state.found        = {}
     state.miss_flash   = 0
     state.joker_press  = 0
@@ -160,31 +160,47 @@ local function settleScoreAnim()
     end
 end
 
+local function enterAllDone()
+    state.mode = STATE_ALL_DONE
+    -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
+    -- once jokers became persistent — same jokers would have been counted
+    -- every level. Awarded once, here.
+    local joker_bonus = state.jokers * 50
+    if joker_bonus > 0 then
+        state.score_anim = {
+            from = state.score, to = state.score + joker_bonus, t = 0,
+        }
+    end
+end
+
 -- Continue past LEVEL_COMPLETE. Wraps to STATE_ALL_DONE after the final
 -- level; otherwise advances and resets.
 local function continueToNextLevel()
     settleScoreAnim()
     if state.level >= LEVELS.level_count then
-        state.mode = STATE_ALL_DONE
+        enterAllDone()
     else
         startLevel(state.level + 1)
     end
 end
 
 -- Reset back to level 1 fresh. Used by GAME_OVER → retry and ALL_DONE → play
--- again. Both wipe the score.
+-- again. Wipes score AND jokers (the session ended).
 local function newRun()
-    state.score = 0
+    state.score  = 0
+    state.jokers = state.joker_max
     startLevel(1)
 end
 
 local function enterLevelComplete()
     state.mode  = STATE_LEVEL_COMPLETE
     state.win_t = 0
-    local time_bonus  = math.floor(state.time_left * 10)
-    local joker_bonus = state.jokers * 50
-    local bonus       = time_bonus + joker_bonus
-    state.score_anim  = { from = state.score, to = state.score + bonus, t = 0 }
+    -- Only time bonus per level; joker bonus is held until session end
+    -- (see enterAllDone). Avoids paying out unused jokers every level.
+    local time_bonus = math.floor(state.time_left * 10)
+    state.score_anim = {
+        from = state.score, to = state.score + time_bonus, t = 0,
+    }
 end
 
 local function enterGameOverReveal()
@@ -201,17 +217,22 @@ local function pushScorePopup(x, y, value)
 end
 
 -- Common path for both player-click finds and joker reveals. Pushes the
--- ellipse animation, awards FIND_POINTS, and spawns the "+N" at the
--- diff's center on the left portrait.
-local function awardFind(d, by_joker)
+-- ellipse animation, awards FIND_POINTS, and (for player finds only)
+-- spawns the "+N" popup at the actual click position. Joker reveals get
+-- no popup since FIND_POINTS feels like a reward for *finding*, not for
+-- spending a joker. click_lx/ly are portrait-local px (nil for jokers).
+local function awardFind(d, by_joker, click_lx, click_ly)
     table.insert(state.found, {
         x = d.x, y = d.y, w = d.w, h = d.h,
-        joker = by_joker, t = 0,
+        joker   = by_joker,
+        click_x = click_lx,    -- nil for joker reveals
+        click_y = click_ly,
+        t = 0,
     })
     state.score = state.score + FIND_POINTS
-    pushScorePopup(IMG_LEFT_X + d.x + d.w / 2,
-                   IMG_Y      + d.y + d.h / 2,
-                   FIND_POINTS)
+    if not by_joker then
+        pushScorePopup(IMG_LEFT_X + click_lx, IMG_Y + click_ly, FIND_POINTS)
+    end
 end
 
 -- ---- Hooks ----------------------------------------------------------------
@@ -343,7 +364,7 @@ function on_mousedown(x, y, button)
 
     for _, d in ipairs(state.diffs) do
         if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
-            awardFind(d, false)
+            awardFind(d, false, lx, ly)
             return
         end
     end
@@ -469,6 +490,16 @@ function on_render()
         draw_ellipse(IMG_RIGHT_X + p.x + p.w/2, IMG_Y + p.y + p.h/2, p.w/2, p.h/2, {
             finish = finish, thickness = 3, color = color,
         })
+        -- Click-position marker — small white dot at where the player
+        -- actually clicked, mirrored on both portraits. Skipped for
+        -- joker reveals (no click position to show).
+        if p.click_x then
+            local s = 3  -- half-size; renders as 6×6 quad
+            draw_quad(IMG_LEFT_X  + p.click_x - s, IMG_Y + p.click_y - s,
+                      s * 2, s * 2, { color = { 1, 1, 1, 1 } })
+            draw_quad(IMG_RIGHT_X + p.click_x - s, IMG_Y + p.click_y - s,
+                      s * 2, s * 2, { color = { 1, 1, 1, 1 } })
+        end
     end
 
     -- ---- Floating "+N" score popups (one per find) ----
