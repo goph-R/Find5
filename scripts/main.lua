@@ -5,6 +5,7 @@
 -- Clicking in either terminal state restarts the level.
 
 local LEVELS = require "levels"
+local dialog = require "dialog"
 
 -- Pick a single image pair to play for now. Multi-image / multi-category
 -- rotation lands with the title screen.
@@ -27,7 +28,6 @@ local ELLIPSE_DRAW_DURATION  = 0.4
 local JOKER_PRESS_DURATION   = 0.1
 local REVEAL_STAGGER         = 0.25  -- delay between consecutive red ellipses
 local REVEAL_DWELL           = 0.8   -- pause after the last reveal before GAME_OVER text
-local POST_WIN_DELAY         = 0.5   -- swallow the click that triggered LEVEL_COMPLETE
 local LOW_TIME_THRESHOLD     = 10.0  -- seconds at which the timebar starts pulsing
 local LOW_TIME_CYCLE         = 2.0   -- one fade cycle (1.0 → 0.2 → 1.0) takes this long
 local FIND_POINTS            = 100   -- per-diff bonus on find (click or joker)
@@ -50,7 +50,6 @@ local state = {
     joker_press  = 0,
     mode         = STATE_PLAYING,
     reveal_t     = 0,                   -- secs in GAME_OVER_REVEAL
-    win_t        = 0,                   -- secs in LEVEL_COMPLETE
     score_popups = {},                  -- floating "+N" texts: { x, y, value, t }
     score_anim   = nil,                 -- level-end count-up: { from, to, t }
 }
@@ -150,7 +149,6 @@ local function startLevel(n)
     state.miss_flash   = 0
     state.joker_press  = 0
     state.reveal_t     = 0
-    state.win_t        = 0
     state.score_popups = {}
     state.score_anim   = nil
     state.mode         = STATE_PLAYING
@@ -196,14 +194,43 @@ local function newRun()
 end
 
 local function enterLevelComplete()
-    state.mode  = STATE_LEVEL_COMPLETE
-    state.win_t = 0
+    state.mode = STATE_LEVEL_COMPLETE
     -- Only time bonus per level; joker bonus is held until session end
     -- (see enterAllDone). Avoids paying out unused jokers every level.
     local time_bonus = math.floor(state.time_left * 10)
+    state.time_bonus = time_bonus    -- snapshot for the dialog body
     state.score_anim = {
         from = state.score, to = state.score + time_bonus, t = 0,
     }
+
+    dialog.show({
+        title = "COMPLETED!",
+        buttons = {
+            {
+                x = 0, y = 110, w = 240, h = 56,
+                region = "button_blue_up",
+                label  = "Next level >",
+                action = continueToNextLevel,
+            },
+        },
+        draw_body = function(intro_done, t, ax, ay)
+            -- Score breakdown. Hidden until the dialog settles so the
+            -- bouncing entrance reads as a unit; once settled the score
+            -- counts up via the existing state.score_anim.
+            if not intro_done then return end
+            draw_text(string.format("Time bonus:  %d", state.time_bonus or 0),
+                      ax, ay - 30, {
+                align = ALIGN_CENTER + ALIGN_MIDDLE,
+                color = { 1.0, 0.95, 0.5 },
+            })
+            draw_text(string.format("Total:  %d", state.score),
+                      ax, ay + 30, {
+                align = ALIGN_CENTER + ALIGN_MIDDLE,
+                font  = "large",
+                color = { 1.0, 0.95, 0.2 },
+            })
+        end,
+    })
 end
 
 local function enterGameOverReveal()
@@ -244,6 +271,10 @@ function on_start()
 end
 
 function on_update(dt)
+    -- Dialog animations must always run — they own the intro/outro
+    -- timing, including the deferred button action.
+    dialog.update(dt)
+
     -- Pause freezes everything: timer, animations, the lot. State just
     -- sits at whatever it was when the player hit the pause button.
     if state.mode == STATE_PAUSED then return end
@@ -299,9 +330,6 @@ function on_update(dt)
             enterGameOverReveal()
         end
 
-    elseif state.mode == STATE_LEVEL_COMPLETE then
-        state.win_t = state.win_t + dt
-
     elseif state.mode == STATE_GAME_OVER_REVEAL then
         state.reveal_t = state.reveal_t + dt
         local n = unfoundCount()
@@ -319,19 +347,22 @@ end
 function on_mousedown(x, y, button)
     if button ~= 1 then return end
 
+    -- An active dialog owns clicks entirely — its button hit-tests run
+    -- inside handle_click, and misses are swallowed (no fall-through
+    -- to game logic underneath the modal).
+    if dialog.is_active() then
+        dialog.handle_click(x, y)
+        return
+    end
+
     -- Paused: any click resumes the game, nothing else fires.
     if state.mode == STATE_PAUSED then
         resumePlaying()
         return
     end
 
-    -- Terminal states swallow clicks. LEVEL_COMPLETE advances to the next
-    -- level (or to ALL_DONE after the final one); GAME_OVER and ALL_DONE
-    -- restart the run from level 1 with score = 0.
-    if state.mode == STATE_LEVEL_COMPLETE then
-        if state.win_t >= POST_WIN_DELAY then continueToNextLevel() end
-        return
-    end
+    -- Terminal states (no dialog yet) still use the placeholder text.
+    -- GAME_OVER / ALL_DONE restart the run from level 1 with score = 0.
     if state.mode == STATE_GAME_OVER or state.mode == STATE_ALL_DONE then
         newRun()
         return
@@ -537,22 +568,19 @@ function on_render()
         })
     end
 
-    -- ---- Terminal-state overlays ----
-    -- Placeholder text until the real dialogs land. Dim the whole view,
-    -- then center a title in the large font; show a "click to ..." hint
-    -- under it once the input is unlocked.
-    if state.mode == STATE_LEVEL_COMPLETE or state.mode == STATE_GAME_OVER
-       or state.mode == STATE_PAUSED or state.mode == STATE_ALL_DONE then
+    -- ---- Terminal-state overlays (placeholder text) ----
+    -- LEVEL_COMPLETE now owns a real dialog (see enterLevelComplete).
+    -- The other modes still use placeholder text until their dialog
+    -- specs land — same dim, same centered title + hint convention.
+    if state.mode == STATE_GAME_OVER or state.mode == STATE_PAUSED
+       or state.mode == STATE_ALL_DONE then
         local vw, vh = view_size()
         draw_quad(-vw / 2, -vh / 2, vw, vh, {
             color = { 0, 0, 0, 0.6 },
         })
 
         local title, hint
-        if state.mode == STATE_LEVEL_COMPLETE then
-            title = "LEVEL COMPLETE!"
-            if state.win_t >= POST_WIN_DELAY then hint = "click to continue" end
-        elseif state.mode == STATE_GAME_OVER then
+        if state.mode == STATE_GAME_OVER then
             title = "GAME OVER"
             hint  = "click to retry"
         elseif state.mode == STATE_ALL_DONE then
@@ -576,4 +604,8 @@ function on_render()
 	        })
         end
     end
+
+    -- Dialog renders last so it sits above everything (HUD, portraits,
+    -- placeholder terminal overlays).
+    dialog.render()
 end
