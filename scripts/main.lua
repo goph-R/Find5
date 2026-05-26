@@ -238,8 +238,22 @@ local function enterGameOverReveal()
     state.reveal_t = 0
 end
 
-local function enterPaused()   state.mode = STATE_PAUSED  end
 local function resumePlaying() state.mode = STATE_PLAYING end
+
+local function enterPaused()
+    state.mode = STATE_PAUSED
+    dialog.show({
+        title = "PAUSED",
+        buttons = {
+            {
+                x = 0, y = 110, w = 240, h = 56,
+                region = "button_blue_up",
+                label  = "Resume",
+                action = resumePlaying,
+            },
+        },
+    })
+end
 
 -- Add a "+N" floating text at canvas (x, y) tied to the next on_render.
 local function pushScorePopup(x, y, value)
@@ -349,15 +363,10 @@ function on_mousedown(x, y, button)
 
     -- An active dialog owns clicks entirely — its button hit-tests run
     -- inside handle_click, and misses are swallowed (no fall-through
-    -- to game logic underneath the modal).
+    -- to game logic underneath the modal). PAUSE / LEVEL_COMPLETE both
+    -- route through here.
     if dialog.is_active() then
         dialog.handle_click(x, y)
-        return
-    end
-
-    -- Paused: any click resumes the game, nothing else fires.
-    if state.mode == STATE_PAUSED then
-        resumePlaying()
         return
     end
 
@@ -569,11 +578,10 @@ function on_render()
     end
 
     -- ---- Terminal-state overlays (placeholder text) ----
-    -- LEVEL_COMPLETE now owns a real dialog (see enterLevelComplete).
-    -- The other modes still use placeholder text until their dialog
-    -- specs land — same dim, same centered title + hint convention.
-    if state.mode == STATE_GAME_OVER or state.mode == STATE_PAUSED
-       or state.mode == STATE_ALL_DONE then
+    -- LEVEL_COMPLETE and PAUSED now own real dialogs. GAME_OVER and
+    -- ALL_DONE still use the placeholder text until their dialog specs
+    -- land — same dim, same centered title + hint convention.
+    if state.mode == STATE_GAME_OVER or state.mode == STATE_ALL_DONE then
         local vw, vh = view_size()
         draw_quad(-vw / 2, -vh / 2, vw, vh, {
             color = { 0, 0, 0, 0.6 },
@@ -583,13 +591,10 @@ function on_render()
         if state.mode == STATE_GAME_OVER then
             title = "GAME OVER"
             hint  = "click to retry"
-        elseif state.mode == STATE_ALL_DONE then
+        else  -- STATE_ALL_DONE
             title = "RUN COMPLETE!"
             hint  = string.format("Final score: %d  -  click to play again",
                                   state.score)
-        else  -- STATE_PAUSED
-            title = "PAUSED"
-            hint  = "click to resume"
         end
 
         draw_text(title, 0, -20, {
@@ -597,12 +602,10 @@ function on_render()
 	      font  = "large",
 	      color = { 1, 1, 1 }
 	    })
-        if hint then
-            draw_text(hint, 0, 30, {
-	          align = ALIGN_CENTER + ALIGN_MIDDLE,
-	          color = { 0.85, 0.85, 0.85 }
-	        })
-        end
+        draw_text(hint, 0, 30, {
+	      align = ALIGN_CENTER + ALIGN_MIDDLE,
+	      color = { 0.85, 0.85, 0.85 }
+	    })
     end
 
     -- Dialog renders last so it sits above everything (HUD, portraits,
