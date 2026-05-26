@@ -102,16 +102,19 @@ local function isFound(d)
     return false
 end
 
+-- Returns (lx, ly, base_x) where lx/ly are portrait-local px and base_x
+-- is the canvas x of the clicked portrait's top-left (so popups can be
+-- placed on the actual side the player clicked).
 local function clickToPortraitLocal(x, y)
     local left_x  = IMG_LEFT_X  + 1
     local right_x = IMG_RIGHT_X + 1
     local top_y   = IMG_Y       + 1
     if y < top_y or y >= top_y + PORTRAIT_H then return nil end
     if x >= left_x  and x < left_x  + PORTRAIT_W then
-        return x - left_x,  y - top_y
+        return x - left_x,  y - top_y, left_x
     end
     if x >= right_x and x < right_x + PORTRAIT_W then
-        return x - right_x, y - top_y
+        return x - right_x, y - top_y, right_x
     end
     return nil
 end
@@ -218,20 +221,19 @@ end
 
 -- Common path for both player-click finds and joker reveals. Pushes the
 -- ellipse animation, awards FIND_POINTS, and (for player finds only)
--- spawns the "+N" popup at the actual click position. Joker reveals get
--- no popup since FIND_POINTS feels like a reward for *finding*, not for
--- spending a joker. click_lx/ly are portrait-local px (nil for jokers).
-local function awardFind(d, by_joker, click_lx, click_ly)
+-- spawns the "+N" popup at the actual click position on the side the
+-- player clicked. Joker reveals get no popup since FIND_POINTS feels
+-- like a reward for *finding*, not for spending a joker.
+-- click_lx/ly are portrait-local px; base_x is the canvas x of the
+-- clicked portrait's top-left. All three are nil for joker reveals.
+local function awardFind(d, by_joker, click_lx, click_ly, base_x)
     table.insert(state.found, {
         x = d.x, y = d.y, w = d.w, h = d.h,
-        joker   = by_joker,
-        click_x = click_lx,    -- nil for joker reveals
-        click_y = click_ly,
-        t = 0,
+        joker = by_joker, t = 0,
     })
     state.score = state.score + FIND_POINTS
     if not by_joker then
-        pushScorePopup(IMG_LEFT_X + click_lx, IMG_Y + click_ly, FIND_POINTS)
+        pushScorePopup(base_x + click_lx, IMG_Y + 1 + click_ly, FIND_POINTS)
     end
 end
 
@@ -359,12 +361,12 @@ function on_mousedown(x, y, button)
         return
     end
 
-    local lx, ly = clickToPortraitLocal(x, y)
+    local lx, ly, base_x = clickToPortraitLocal(x, y)
     if not lx then return end
 
     for _, d in ipairs(state.diffs) do
         if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
-            awardFind(d, false, lx, ly)
+            awardFind(d, false, lx, ly, base_x)
             return
         end
     end
