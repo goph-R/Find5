@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
     texBlurInit(&blurCache);
     ScriptSystem script;
     scriptInit(&script, &ui, &snd, &sndLib, &mus, &musLib, &assetReg,
-               &texCache, &blurCache);
+               &texCache, &blurCache, "find5.dat");
     scriptLoadAssets(&script, "assets.lua");
     scriptInstallConsolePrint(&script);
 
