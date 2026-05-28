@@ -15,7 +15,15 @@ LIBS = $(shell sdl-config --libs) -lGL -lopenal
 
 OBJ = main.o lua.o vorbis.o
 
-all: $(BIN)
+all: $(BIN) scripts/engine
+
+# Mirror the engine's Lua modules next to the exe so shipped builds find
+# `require "engine.scene"` via ./scripts/?.lua without needing the
+# SOOB-Core repo on the player's machine.
+scripts/engine: $(wildcard $(ENGINE)/scripts/engine/*.lua)
+	mkdir -p scripts/engine
+	cp $(ENGINE)/scripts/engine/*.lua scripts/engine/
+	touch scripts/engine
 
 $(BIN): $(OBJ)
 	$(CPP) $(OBJ) -o $(BIN) $(LIBS)

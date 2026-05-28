@@ -34,3 +34,13 @@ add_executable(Find5
     ${ENGINE}/vendor/lua-5.1.5/src/lua_all.c
 )
 target_link_libraries(Find5 ${SDL_LIBS} ${OPENGL_LIBRARIES} ${OPENAL_LIBRARY})
+
+# Mirror the engine's Lua modules next to the exe so shipped builds find
+# require "engine.scene" via ./scripts/?.lua without needing SOOB-Core
+# on the player's machine.
+add_custom_command(TARGET Find5 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${CMAKE_SOURCE_DIR}/scripts/engine
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${ENGINE}/scripts/engine
+            ${CMAKE_SOURCE_DIR}/scripts/engine)

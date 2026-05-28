@@ -69,6 +69,14 @@ echo Linking...
 C:\Dev-Cpp\bin\g++.exe raw\obj\main.o raw\obj\lua.o raw\obj\vorbis.o -o Find5.exe -L..\SOOB-Core\vendor\lib -lmingw32 -lSDLmain -lSDL -lopengl32 -lOpenAL32
 if errorlevel 1 goto error
 
+REM ----------------------------------------------------------------
+REM  Mirror SOOB-Core's Lua engine modules next to the exe so
+REM  require "engine.scene" resolves via ./scripts/?.lua in shipped
+REM  builds without needing the SOOB-Core repo on the player's machine.
+REM ----------------------------------------------------------------
+if not exist scripts\engine mkdir scripts\engine
+copy /Y ..\SOOB-Core\scripts\engine\*.lua scripts\engine\ >nul
+
 echo.
 echo === Build successful! Run Find5.exe ===
 echo Make sure OpenAL32.dll is next to the exe or in the system directory.
