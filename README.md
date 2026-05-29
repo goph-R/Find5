@@ -1,8 +1,25 @@
 # Find5
 
-A minimal 2D game engine targeting everything from Windows 98 (Pentium 4, SDL 1.2, fixed-function OpenGL) through modern Linux and Windows. OpenAL Soft for audio, Lua 5.1 for asset manifests + game scripting, stb_image for PNG, stb_vorbis for OGG, header-only modules, no shaders.
+A 2D spot-the-difference game targeting everything from Windows 98 (Pentium 4, SDL 1.2, fixed-function OpenGL) through modern Linux and Windows.
 
-Forked from [SDLFun](../SDLFun) — same constraints and module conventions, but stripped of Bullet physics, FPS controls, OBJ/MTL/IQM model loading, dynamic lightmap, nav graph, and menu/console screens. What's left is the audio/scripting/2D-rendering core, suitable as a starting point for a 2D game.
+The shared engine — audio, scripting, 2D rendering, asset registry — lives in [**goph-R/SOOB-Core**](https://github.com/goph-R/SOOB-Core) and is also consumed by [goph-R/SOOB-Engine](https://github.com/goph-R/SOOB-Engine) (the 3D FPS). Find5 itself is just `main.cpp` + Lua scripts + assets.
+
+## Depends on SOOB-Core
+
+Clone the shared engine next to this repo before building:
+
+```
+Win98/
+├── Find5/         ← this repo
+├── SOOB-Core/     ← clone alongside
+└── SOOB-Engine/   ← optional, shares the same engine
+```
+
+```sh
+git clone git@github.com:goph-R/SOOB-Core.git
+```
+
+Build scripts add `-I../SOOB-Core/` so `#include "script.h"` etc. resolve into the shared engine. Engine-side Lua modules (e.g. `engine.scene`) are copied next to the .exe at build time.
 
 ## Building
 
@@ -18,7 +35,7 @@ Quick reference:
 
 Run the executable from the repo root — assets are loaded by relative path.
 
-The starter draws a centered sprite with a slow vertical bob, plays the title OGG via Lua, and shows a transient HUD message. Space or Left-click play the `jump` sound (wired in `scripts/main.lua`). Esc quits.
+The game: pick 5 differences between two portrait images per level, 10 levels per run, with a timer + jokers + per-category highscores. Click either image to mark a find; the joker button reveals the first unfound difference (yellow ellipse vs. green for player finds). Miss-click penalises ¼ of the remaining time. Pause / level-complete / game-over / all-done all open animated modal dialogs (drop-in with `easeOutBounce`, shoot-up exit with `easeInExpo`). Design notes: [`docs/game-plan.md`](docs/game-plan.md), [`docs/menu-plan.md`](docs/menu-plan.md).
 
 CLI flags: `-w <width>`, `-h <height>`, `-fullscreen`.
 
