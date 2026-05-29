@@ -218,6 +218,15 @@ int main(int argc, char *argv[])
                 if (sym == SDLK_ESCAPE) running = 0;
                 const char *name = SDL_GetKeyName(sym);
                 scriptCallKeyDown(&script, name ? name : "");
+                /* Fire on_textinput after on_keydown when the key
+                   produced a printable ASCII character. Editor widgets
+                   handle character insertion here; navigation keys
+                   stay in on_keydown. ASCII only for v1. */
+                Uint16 uni = event.key.keysym.unicode;
+                if (uni >= 0x20 && uni <= 0x7E) {
+                    char buf[2] = { (char)uni, '\0' };
+                    scriptCallTextInput(&script, buf);
+                }
             }
             if (event.type == SDL_KEYUP) {
                 const char *name = SDL_GetKeyName(event.key.keysym.sym);
