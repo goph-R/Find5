@@ -4,6 +4,7 @@
 find5
 build/
 raw/obj/
+dist/
 
 # Engine Lua modules copied from ../SOOB-Core/ at build time.
 # Source of truth lives in SOOB-Core; this dir is regenerated on each build.

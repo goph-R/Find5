@@ -6,6 +6,7 @@
 
 local LEVELS = require "levels"
 local dialog = require "dialog"
+local scene  = require "engine.scene"
 
 -- Pick a single image pair to play for now. Multi-image / multi-category
 -- rotation lands with the title screen.
@@ -337,12 +338,13 @@ local function awardFind(d, by_joker, click_lx, click_ly, base_x)
 end
 
 -- ---- Hooks ----------------------------------------------------------------
+--
+-- Hooks are routed through engine.scene. The menu scene is the first
+-- thing pushed; clicking its "Start game" button calls
+-- find5_start_game(), which replaces the menu with the game_scene
+-- defined at the bottom of this file.
 
-function on_start()
-    -- music_play("title", 0.5, true)
-end
-
-function on_update(dt)
+local function game_update(dt)
     -- Dialog animations must always run — they own the intro/outro
     -- timing, including the deferred button action.
     dialog.update(dt)
@@ -416,7 +418,7 @@ function on_update(dt)
     end
 end
 
-function on_mousedown(x, y, button)
+local function game_mousedown(x, y, button)
     if button ~= 1 then return end
 
     -- An active dialog owns clicks entirely — its button hit-tests run
@@ -471,7 +473,7 @@ end
 
 -- ---- Render ---------------------------------------------------------------
 
-function on_render()
+local function game_render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
     draw_blur("image_1a", { width = 16, alpha = 0.6 })
 
@@ -632,4 +634,45 @@ function on_render()
     -- Dialog renders last so it sits above everything (HUD, portraits,
     -- diff ellipses). All terminal states are dialogs now.
     dialog.render()
+end
+
+-- ---- Scene wrapper --------------------------------------------------------
+-- The game runs as one scene; the title screen runs as another. Bodies
+-- of game_update / game_mousedown / game_render are unchanged from when
+-- they were top-level on_* hooks — only the dispatch path changed.
+
+local game_scene = {}
+
+function game_scene:enter()
+    -- The current_pair / current_diffs / state table at the top of this
+    -- file are already initialised to level-1 fresh, so nothing extra to
+    -- do for the first run. A "play again" path through enterAllDone /
+    -- enterGameOver re-uses newRun() which already resets everything.
+end
+
+function game_scene:update(dt)     game_update(dt)         end
+function game_scene:mousedown(x, y, b) game_mousedown(x, y, b) end
+function game_scene:render()        game_render()           end
+
+-- Menu hands off to the game by calling this global. category arg is the
+-- entry from levels.lua's `categories` array; not used yet (the engine
+-- still plays the single hard-coded portrait pair) but the plumbing is
+-- in place for when image selection lands.
+function _G.find5_start_game(category)
+    scene.replace(game_scene)
+end
+
+-- Menu's close button signals quit. SDL has no Lua-side quit binding, so
+-- we use a flag the engine polls each frame; the simplest portable shim
+-- is to push an SDL_QUIT via a future binding. For the draft we just log.
+function _G.find5_request_quit()
+    ui_show_message("Press Esc to quit (Lua quit binding: TODO)", 2.0)
+end
+
+-- Wire the on_* engine hooks to scene dispatchers. on_start stays
+-- custom so we can push the menu on first frame.
+scene.install_hooks(_G)
+
+function on_start()
+    scene.push(require("menu"))
 end

@@ -28,7 +28,7 @@ scripts/engine: $(wildcard $(ENGINE)/scripts/engine/*.lua)
 $(BIN): $(OBJ)
 	$(CPP) $(OBJ) -o $(BIN) $(LIBS)
 
-main.o: main.cpp
+main.o: main.cpp $(wildcard $(ENGINE)/*.h)
 	$(CPP) -c main.cpp -o main.o $(CXXFLAGS)
 
 # stb_vorbis (Ogg Vorbis decoder, public domain). Built as its own C TU
