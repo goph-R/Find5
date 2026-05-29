@@ -42,7 +42,7 @@ return {
 	
 		menu_bg = { tex = "menu_bg", x = 0, y = 0, w = 512, h = 512 },
 		
-		logo                = { tex = "menu_ui", x = 0, y = 0, w = 442, h = 118 },
+		logo                = { tex = "menu_ui", x = 0, y = 0, w = 442, h = 148 },
 		category_box        = { tex = "menu_ui", x = 0, y = 148, w = 177, h = 177 },
 		button2_up          = { tex = "menu_ui", x = 178, y = 148, w = 90, h = 91 },
 		button2_down        = { tex = "menu_ui", x = 269, y = 148, w = 90, h = 91 },
@@ -53,14 +53,14 @@ return {
 		close_icon          = { tex = "menu_ui", x = 360, y = 234, w = 21, h = 23 },
 		left_icon           = { tex = "menu_ui", x = 178, y = 240, w = 27, h = 46 },
 		left_disabled_icon  = { tex = "menu_ui", x = 178, y = 287, w = 27, h = 46 },
-		right_icon          = { tex = "menu_ui", x = 260, y = 240, w = 27, h = 46 },
-		right_disabled_icon = { tex = "menu_ui", x = 260, y = 287, w = 27, h = 46 },
+		right_icon          = { tex = "menu_ui", x = 206, y = 240, w = 27, h = 46 },
+		right_disabled_icon = { tex = "menu_ui", x = 206, y = 287, w = 27, h = 46 },
 		sound_on_icon       = { tex = "menu_ui", x = 234, y = 240, w = 53, h = 62 },
 		sound_off_icon      = { tex = "menu_ui", x = 234, y = 303, w = 53, h = 62 },
 		music_on_icon       = { tex = "menu_ui", x = 287, y = 240, w = 67, h = 50 },
-		music_off_icon      = { tex = "menu_ui", x = 287, y = 303, w = 67, h = 50 },
+		music_off_icon      = { tex = "menu_ui", x = 287, y = 291, w = 67, h = 50 },
 		
-		category_1   = { tex = "categories", x = 0, y = 0, w = 175, h = 175 },
+		category_medieval   = { tex = "categories", x = 0, y = 0, w = 175, h = 175 },
 		
 		dialog_bg    = { tex = "dialog_bg", x = 0, y = 0, w = 461, h = 307 },
 		dialog_chain = { tex = "dialog_bg", x = 0, y = 303, w = 43, h = 168 },

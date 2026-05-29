@@ -16,8 +16,8 @@ return {
 
     categories = {
         {
-            id    = "portraits",
-            title = "Portraits",
+            id    = "medieval",
+            title = "Medieval",
             images = {
                 {
                     -- `pair` resolves to texture regions image_<pair>a / image_<pair>b.

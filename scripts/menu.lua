@@ -20,9 +20,9 @@ local widget = require "engine.widget"
 local LEVELS = require "levels"
 
 -- ---- Layout (virtual canvas: 480 tall, origin center, Y-down) -------------
-local LOGO_Y       = -222
+local LOGO_Y       = -232
 
-local CLOSE_X      =  274
+local CLOSE_X      =  264
 local CLOSE_Y      = -232
 local CLOSE_SIZE   =   48
 
@@ -32,7 +32,7 @@ local SIDE_BTN_H   =   91
 local CAT_BOX_W    =  177
 local CAT_BOX_H    =  177
 local CAT_BOX_X    =  -88            -- top-left (centered horizontally)
-local CAT_BOX_Y    =  -98
+local CAT_BOX_Y    =  -88
 
 local PICKER_Y_TL  = CAT_BOX_Y + (CAT_BOX_H - SIDE_BTN_H) / 2
 local LEFT_BTN_X   = CAT_BOX_X - SIDE_BTN_W - 24
@@ -46,10 +46,10 @@ local TEXT_BTN_H   =   42       -- secondary buttons (default font)
 local START_BTN_H  =   60       -- primary "Start game" (large font)
 local START_BTN_W  =  260
 local START_BTN_X  = -130
-local START_BTN_Y  =   85
+local START_BTN_Y  =  110
 
 local SUB_BTN_W    =  110
-local SUB_BTN_Y    =  155
+local SUB_BTN_Y    =  180
 local HISC_BTN_X   = -115
 local CRED_BTN_X   =    5
 
@@ -66,12 +66,9 @@ local categories = {}
 for i, c in ipairs(LEVELS.categories or {}) do
     categories[i] = {
         name    = c.title or c.id or ("Category " .. i),
-        region  = c.region or "category_1",
+        region  = c.region or "category_" .. c.id,
         source  = c,
     }
-end
-if #categories == 0 then
-    categories = { { name = "Medieval", region = "category_1" } }
 end
 
 local function at_first() return current_cat <= 1 end
@@ -242,14 +239,14 @@ function menu_scene:render()
     -- Logo: anchored to its top edge.
     draw_region("logo", 0, LOGO_Y, { align = ALIGN_CENTER + ALIGN_TOP })
 
-    -- Category preview: frame, then the category image inset 1 px, then
+    -- Category preview: category image inset 1 px, then frame (over image)
     -- the title caption near the bottom of the frame.
-    draw_region("category_box", CAT_BOX_X, CAT_BOX_Y)
     draw_region(categories[current_cat].region,
                 CAT_BOX_X + 1, CAT_BOX_Y + 1)
+    draw_region("category_box", CAT_BOX_X, CAT_BOX_Y)
     draw_text(categories[current_cat].name,
               CAT_BOX_X + CAT_BOX_W / 2,
-              CAT_BOX_Y + CAT_BOX_H - 18, {
+              CAT_BOX_Y + CAT_BOX_H - 15, {
         align = ALIGN_CENTER + ALIGN_MIDDLE,
         color = { 1.0, 1.0, 1.0 },
     })
