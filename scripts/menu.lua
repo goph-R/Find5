@@ -56,8 +56,10 @@ local CRED_BTN_X   =    5
 -- ---- Scene state ----------------------------------------------------------
 
 local current_cat = 1
-local widgets     = {}
-local focused     = nil
+
+-- Top-level panel at scene origin (0,0). Children use scene-space coords
+-- directly — the panel adds zero offset, it just fans events out.
+local root = widget.panel({ x = 0, y = 0 })
 
 -- Categories list. Pulled from levels.lua so adding a category there
 -- shows up in the picker. Each entry surfaces a display name plus a
@@ -139,76 +141,84 @@ end
 -- by remembering which slot was focused before — same slot on the new list
 -- gets focus back, which works because the slot order is stable.
 
-local FOCUS_SLOT_START = 6   -- Start game is widgets[6]
+local FOCUS_SLOT_START = 6   -- Start game is children[6]
 
 rebuild = function()
     local prev_slot
-    if focused then
-        for i, w in ipairs(widgets) do if w == focused then prev_slot = i; break end end
+    if root.focused_child then
+        for i, w in ipairs(root.children) do
+            if w == root.focused_child then prev_slot = i; break end
+        end
     end
-    widgets = {}
+
+    root.children = {}
+    root.focused_child = nil
 
     -- 1. Close (top-right). A small button_up 9-patch with the X icon.
-    widgets[1] = widget.button({
+    root:add(widget.button({
         x = CLOSE_X, y = CLOSE_Y, width = CLOSE_SIZE, height = CLOSE_SIZE,
         bg_up = "button_up", bg_down = "button_down",
         icon = "close_icon", icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
         on_click = close_action,
-    })
+    }))
 
     -- 2-3. Category picker arrows.
-    widgets[2] = make_icon_button({
+    root:add(make_icon_button({
         x = LEFT_BTN_X, y = PICKER_Y_TL,
         icon = at_first() and "left_disabled_icon" or "left_icon",
         disabled = at_first(),
         on_click = prev_cat_action,
-    })
-    widgets[3] = make_icon_button({
+    }))
+    root:add(make_icon_button({
         x = RIGHT_BTN_X, y = PICKER_Y_TL,
         icon = at_last() and "right_disabled_icon" or "right_icon",
         disabled = at_last(),
         on_click = next_cat_action,
-    })
+    }))
 
     -- 4-5. Audio toggles.
-    widgets[4] = make_icon_button({
+    root:add(make_icon_button({
         x = SOUND_BTN_X, y = TOGGLE_BTN_Y,
         icon = opt_get("sound_on", true) and "sound_on_icon" or "sound_off_icon",
         on_click = sound_toggle_action,
-    })
-    widgets[5] = make_icon_button({
+    }))
+    root:add(make_icon_button({
         x = MUSIC_BTN_X, y = TOGGLE_BTN_Y,
         icon = opt_get("music_on", true) and "music_on_icon" or "music_off_icon",
         on_click = music_toggle_action,
-    })
+    }))
 
     -- 6. Start game — primary action, large font, default focus target.
-    widgets[6] = make_text_button({
+    root:add(make_text_button({
         x = START_BTN_X, y = START_BTN_Y,
         width = START_BTN_W, height = START_BTN_H,
         text = "Start game", font = "large",
         on_click = start_game_action,
-    })
+    }))
 
     -- 7-8. Secondary buttons.
-    widgets[7] = make_text_button({
+    root:add(make_text_button({
         x = HISC_BTN_X, y = SUB_BTN_Y, width = SUB_BTN_W,
         text = "Highscores", on_click = highscores_action,
-    })
-    widgets[8] = make_text_button({
+    }))
+    root:add(make_text_button({
         x = CRED_BTN_X, y = SUB_BTN_Y, width = SUB_BTN_W,
         text = "Credits", on_click = credits_action,
-    })
+    }))
 
     -- Restore focus to the same slot if it's still focusable, otherwise
-    -- default to Start game.
+    -- default to Start game. :add() auto-focused the first focusable
+    -- child (the close button); override here.
     local slot = prev_slot or FOCUS_SLOT_START
-    local target = widgets[slot]
+    local target = root.children[slot]
     if not (target and target.focusable and not target.disabled) then
-        target = widgets[FOCUS_SLOT_START]
+        target = root.children[FOCUS_SLOT_START]
     end
-    focused = target
-    focused.focused = true
+    if root.focused_child and root.focused_child ~= target then
+        root.focused_child.focused = false
+    end
+    root.focused_child = target
+    target.focused = true
 end
 
 -- ---- Scene table -----------------------------------------------------------
@@ -224,9 +234,7 @@ end
 
 function menu_scene:exit() end
 
-function menu_scene:update(dt)
-    widget.dispatch_update(widgets, dt)
-end
+function menu_scene:update(dt) root:update(dt) end
 
 function menu_scene:render()
     -- Marble backdrop — stretch the 512² texture across the actual visible
@@ -251,40 +259,12 @@ function menu_scene:render()
         color = { 1.0, 1.0, 1.0 },
     })
 
-    for _, w in ipairs(widgets) do w:draw() end
+    root:draw()
 end
 
-function menu_scene:mousedown(x, y, button)
-    if button ~= 1 then return end
-    -- Click-to-focus: whichever focusable widget the click landed in
-    -- claims focus before the press registers.
-    for _, w in ipairs(widgets) do
-        if w.focusable and not w.disabled and w:hit(x, y) then
-            if focused and focused ~= w then focused.focused = false end
-            focused = w
-            focused.focused = true
-            break
-        end
-    end
-    for _, w in ipairs(widgets) do
-        if w.mousedown then w:mousedown(x, y, button) end
-    end
-end
-
-function menu_scene:mouseup(x, y, button)
-    for _, w in ipairs(widgets) do
-        if w.mouseup then w:mouseup(x, y, button) end
-    end
-end
-
-function menu_scene:mousemove(x, y, dx, dy)
-    for _, w in ipairs(widgets) do
-        if w.mousemove then w:mousemove(x, y, dx, dy) end
-    end
-end
-
-function menu_scene:keydown(name)
-    focused = widget.dispatch_keydown(widgets, focused, name) or focused
-end
+function menu_scene:mousedown(x, y, button) root:mousedown(x, y, button) end
+function menu_scene:mouseup  (x, y, button) root:mouseup  (x, y, button) end
+function menu_scene:mousemove(x, y, dx, dy) root:mousemove(x, y, dx, dy) end
+function menu_scene:keydown  (name)         root:keydown  (name)         end
 
 return menu_scene
