@@ -119,6 +119,7 @@ local function make_text_button(spec)
         width    = spec.width,    height   = spec.height or TEXT_BTN_H,
         text     = spec.text,     font     = spec.font,
         bg_up    = "button_up",   bg_down  = "button_down",
+        bg_hover = "button_hover",
         on_click = spec.on_click,
     })
 end
@@ -130,6 +131,7 @@ local function make_icon_button(spec)
         icon      = spec.icon,
         icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
         bg_up     = "button2_up",  bg_down    = "button2_down",
+        bg_hover  = "button2_hover",
         on_click  = spec.on_click,
         disabled  = spec.disabled or false,
     })
@@ -158,6 +160,7 @@ rebuild = function()
     root:add(widget.button({
         x = CLOSE_X, y = CLOSE_Y, width = CLOSE_SIZE, height = CLOSE_SIZE,
         bg_up = "button_up", bg_down = "button_down",
+        bg_hover = "button_hover",
         icon = "close_icon", icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
         on_click = close_action,
     }))
@@ -222,8 +225,14 @@ rebuild = function()
 end
 
 -- ---- Scene table -----------------------------------------------------------
+--
+-- root is exposed on the scene so engine.scene's dispatchers auto-
+-- forward update / mouse / key events into it — no per-method
+-- boilerplate. Only :enter and :render are needed: enter builds the
+-- widget tree, render paints the scene-specific bg art and then asks
+-- root to draw the widgets on top.
 
-local menu_scene = {}
+local menu_scene = { root = root }
 
 function menu_scene:enter()
     rebuild()
@@ -231,10 +240,6 @@ function menu_scene:enter()
         music_play("title", 0.5, true)
     end
 end
-
-function menu_scene:exit() end
-
-function menu_scene:update(dt) root:update(dt) end
 
 function menu_scene:render()
     -- Marble backdrop — stretch the 512² texture across the actual visible
@@ -259,12 +264,7 @@ function menu_scene:render()
         color = { 1.0, 1.0, 1.0 },
     })
 
-    root:draw()
+    self.root:draw()
 end
-
-function menu_scene:mousedown(x, y, button) root:mousedown(x, y, button) end
-function menu_scene:mouseup  (x, y, button) root:mouseup  (x, y, button) end
-function menu_scene:mousemove(x, y, dx, dy) root:mousemove(x, y, dx, dy) end
-function menu_scene:keydown  (name)         root:keydown  (name)         end
 
 return menu_scene
