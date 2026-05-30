@@ -26,7 +26,6 @@ local DIFF_COUNT             = LEVELS.diff_count
 local MISS_FLASH_DURATION    = 0.4
 local MISS_FLASH_MAX_ALPHA   = 0.5
 local ELLIPSE_DRAW_DURATION  = 0.4
-local JOKER_PRESS_DURATION   = 0.1
 local REVEAL_STAGGER         = 0.25  -- delay between consecutive red ellipses
 local REVEAL_DWELL           = 0.8   -- pause after the last reveal before GAME_OVER text
 local LOW_TIME_THRESHOLD     = 10.0  -- seconds at which the timebar starts pulsing
@@ -48,7 +47,6 @@ local state = {
     diffs        = current_diffs,
     found        = {},
     miss_flash   = 0,
-    joker_press  = 0,
     mode         = STATE_PLAYING,
     reveal_t     = 0,                   -- secs in GAME_OVER_REVEAL
     score_popups = {},                  -- floating "+N" texts: { x, y, value, t }
@@ -148,7 +146,6 @@ local function startLevel(n)
     state.time_left    = state.time_total
     state.found        = {}
     state.miss_flash   = 0
-    state.joker_press  = 0
     state.reveal_t     = 0
     state.score_popups = {}
     state.score_anim   = nil
@@ -344,11 +341,10 @@ local function awardFind(d, by_joker, click_lx, click_ly, base_x)
     end
 end
 
--- Joker button on_click: triggers the press flash, and (if any jokers
--- left) reveals the next unfound diff. Was inline in game_mousedown
--- against pointInRect; the widget owns the hit-test now.
+-- Joker button on_click: if any jokers are left, reveal the next
+-- unfound diff. The press flash comes for free from widget.button's
+-- mousedown/mouseup cycle — no timer needed.
 joker_action = function()
-    state.joker_press = JOKER_PRESS_DURATION
     if state.jokers > 0 then
         local d = firstUnfound()
         if d then
@@ -486,13 +482,6 @@ local function sync_hud()
         bar_alpha = 0.6 + 0.4 * math.cos(2 * math.pi * phase)
     end
     timebar_fg.alpha = bar_alpha
-
-    -- Joker press flash: hold _pressed=true while the timer counts
-    -- down. Widget's own mouseup will have set _pressed=false on the
-    -- release frame; the next sync_hud restores it if the timer is
-    -- still active. After the timer expires we don't override and
-    -- _pressed stays false.
-    if state.joker_press > 0 then joker_button._pressed = true end
 end
 
 -- ---- Hooks ----------------------------------------------------------------
@@ -522,10 +511,6 @@ local function game_update(dt)
     if state.miss_flash > 0 then
         state.miss_flash = state.miss_flash - dt
         if state.miss_flash < 0 then state.miss_flash = 0 end
-    end
-    if state.joker_press > 0 then
-        state.joker_press = state.joker_press - dt
-        if state.joker_press < 0 then state.joker_press = 0 end
     end
 
     -- Score count-up animation (set by enterLevelComplete). Updates the
@@ -698,7 +683,7 @@ end
 -- of game_update / game_mousedown / game_render are unchanged from when
 -- they were top-level on_* hooks — only the dispatch path changed.
 
-local game_scene = {}
+local game_scene = { root = root }
 
 function game_scene:enter()
     -- The current_pair / current_diffs / state table at the top of this
