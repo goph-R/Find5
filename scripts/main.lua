@@ -167,6 +167,11 @@ end
 -- comes further down; everything in between can refer to it.
 local newRun
 
+-- Forward decls for the symbols the HUD widgets' on_click closures
+-- need. The actual function bodies are assigned further down (after
+-- the helpers they each use are defined).
+local enterPaused, joker_action
+
 local function enterAllDone()
     state.mode = STATE_ALL_DONE
     -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
@@ -299,7 +304,9 @@ end
 
 local function resumePlaying() state.mode = STATE_PLAYING end
 
-local function enterPaused()
+-- Assigning to the forward-declared upvalue (NOT `local function`) so
+-- the HUD widgets' on_click closure resolves to this body.
+enterPaused = function()
     state.mode = STATE_PAUSED
     dialog.show({
         title = "PAUSED",
@@ -335,6 +342,157 @@ local function awardFind(d, by_joker, click_lx, click_ly, base_x)
         state.score = state.score + FIND_POINTS
         pushScorePopup(base_x + click_lx, IMG_Y + 1 + click_ly, FIND_POINTS)
     end
+end
+
+-- Joker button on_click: triggers the press flash, and (if any jokers
+-- left) reveals the next unfound diff. Was inline in game_mousedown
+-- against pointInRect; the widget owns the hit-test now.
+joker_action = function()
+    state.joker_press = JOKER_PRESS_DURATION
+    if state.jokers > 0 then
+        local d = firstUnfound()
+        if d then
+            awardFind(d, true)
+            state.jokers = state.jokers - 1
+        end
+    else
+        snd_play("wrong")
+    end
+end
+
+-- ---- HUD widget tree ------------------------------------------------------
+--
+-- Static UI lives in a root panel so it participates in scene
+-- transitions (a fade/slide on root cascades through every child). The
+-- highly-dynamic stuff (blur backdrop, find / reveal ellipses, score
+-- popups, miss flash, dialog) stays in custom render — its state
+-- changes every tick and doesn't map onto stable widget fields.
+
+local widget = require "engine.widget"
+
+local root = widget.panel({ x = 0, y = 0 })
+
+-- Layer 1: portrait frames + portraits. Painted first; the dynamic
+-- ellipses / popups / overlays paint on top in game_render.
+root:add(widget.image{ x = IMG_LEFT_X,      y = IMG_Y,     region = "image_bg" })
+root:add(widget.image{ x = IMG_LEFT_X + 1,  y = IMG_Y + 1, region = "image_1a" })
+root:add(widget.image{ x = IMG_RIGHT_X,     y = IMG_Y,     region = "image_bg" })
+root:add(widget.image{ x = IMG_RIGHT_X + 1, y = IMG_Y + 1, region = "image_1b" })
+
+-- Layer 2: timebar. The fg's fill_x and alpha get rewritten each
+-- frame by sync_hud — fill from time_left, alpha pulses on low time.
+root:add(widget.image{ x = BAR_X, y = BAR_Y, region = "timebar_bg" })
+local timebar_fg = widget.image{
+    x = BAR_X + 1, y = BAR_Y + 1, region = "timebar",
+}
+root:add(timebar_fg)
+
+-- Layer 3: stars. Region of each is swapped between "star" and
+-- "star_empty" in sync_hud based on how many diffs have been found.
+local star_widgets = {}
+for i = 1, DIFF_COUNT do
+    star_widgets[i] = widget.image{
+        x = STAR_X, y = IMG_Y + (STAR_SIZE + 8) * (i - 1),
+        region = "star_empty",
+    }
+    root:add(star_widgets[i])
+end
+
+-- Layer 4: HUD text. Width 0 + align CENTER+TOP reproduces the
+-- original "draw text centred on this point" semantics — anchor_in
+-- on a zero-size bbox lands at (x, y) regardless of horizontal align.
+local function add_text(x, y, text, opts)
+    opts = opts or {}
+    local lbl = widget.label{
+        x = x, y = y, width = 0, height = 0,
+        text = text,
+        align = opts.align or (ALIGN_CENTER + ALIGN_TOP),
+        font  = opts.font,
+        color = opts.color or SMALL_LABEL_COLOR,
+    }
+    root:add(lbl)
+    return lbl
+end
+
+-- LEVEL column — current / total with "/" between.
+add_text(LEVEL_X,      TOP_LABELS_Y,       "LEVEL")
+local level_current = add_text(LEVEL_X - 20, TOP_NUMBERS_Y, "1",
+                               { font = "large", color = CURRENT_COLOR })
+local level_total   = add_text(LEVEL_X + 20, TOP_NUMBERS_Y, "1",
+                               { font = "large", color = TOTAL_COLOR })
+add_text(LEVEL_X,      TOP_SLASH_LABELS_Y, "/")
+
+-- FOUND column — current / DIFF_COUNT (total is static).
+add_text(FOUND_X,      TOP_LABELS_Y,       "FOUND")
+local found_current = add_text(FOUND_X - 20, TOP_NUMBERS_Y, "0",
+                               { font = "large", color = CURRENT_COLOR })
+add_text(FOUND_X + 20, TOP_NUMBERS_Y,      tostring(DIFF_COUNT),
+         { font = "large", color = TOTAL_COLOR })
+add_text(FOUND_X,      TOP_SLASH_LABELS_Y, "/")
+
+-- SCORE column — single number, no /total.
+add_text(SCORE_X, TOP_LABELS_Y,  "SCORE")
+local score_label  = add_text(SCORE_X, TOP_NUMBERS_Y, "0",
+                              { font = "large", color = SCORE_COLOR })
+
+-- JOKER badge (label above the count, count above the button).
+add_text(JOKER_X, JOKER_Y,      "JOKER")
+local joker_count  = add_text(JOKER_X, JOKER_Y + 16, "0",
+                              { font = "large", color = CURRENT_COLOR })
+
+-- Layer 5: buttons. pause (top-right) and joker (center-bottom). Both
+-- use bg_up / bg_down regions; the 9-patch fallback degrades to a
+-- stretched single draw_region when the region has no slice, so at
+-- native size (42x42) they paint pixel-identical to the old direct
+-- draw_region calls.
+local pause_button = widget.button{
+    x = PAUSE_BTN_X, y = PAUSE_BTN_Y, width = 42, height = 42,
+    bg_up = "pause_button_up", bg_down = "pause_button_down",
+    on_click = function() enterPaused() end,
+}
+-- HUD buttons are mouse-only. Mark non-focusable BEFORE :add so the
+-- panel's auto-focus walk skips them — otherwise pressing Enter or
+-- Space during gameplay would fire pause / joker via dispatch_keydown.
+pause_button.focusable = false
+root:add(pause_button)
+
+local joker_button = widget.button{
+    x = JOKER_BTN_X, y = JOKER_BTN_Y, width = 42, height = 42,
+    bg_up = "joker_button_up", bg_down = "joker_button_down",
+    on_click = function() joker_action() end,
+}
+joker_button.focusable = false
+root:add(joker_button)
+
+-- Per-frame: pull labels / regions / fills / alphas from game state.
+local function sync_hud()
+    level_current.text = tostring(state.level)
+    level_total.text   = tostring(state.level_count)
+    found_current.text = tostring(#state.found)
+    score_label.text   = tostring(state.score)
+    joker_count.text   = tostring(state.jokers)
+
+    for i = 1, DIFF_COUNT do
+        star_widgets[i].region = (i <= #state.found) and "star" or "star_empty"
+    end
+
+    timebar_fg.fill_x = state.time_left / state.time_total
+
+    -- Last-10s warning: cosine alpha pulse, 5 cycles over the final 10s.
+    -- Only pulses while PLAYING — pause/game-over freeze it.
+    local bar_alpha = 1.0
+    if state.mode == STATE_PLAYING and state.time_left <= LOW_TIME_THRESHOLD then
+        local phase = (LOW_TIME_THRESHOLD - state.time_left) / LOW_TIME_CYCLE
+        bar_alpha = 0.6 + 0.4 * math.cos(2 * math.pi * phase)
+    end
+    timebar_fg.alpha = bar_alpha
+
+    -- Joker press flash: hold _pressed=true while the timer counts
+    -- down. Widget's own mouseup will have set _pressed=false on the
+    -- release frame; the next sync_hud restores it if the timer is
+    -- still active. After the timer expires we don't override and
+    -- _pressed stays false.
+    if state.joker_press > 0 then joker_button._pressed = true end
 end
 
 -- ---- Hooks ----------------------------------------------------------------
@@ -416,6 +574,10 @@ local function game_update(dt)
             enterGameOver()
         end
     end
+
+    -- Push the latest game state into the HUD widgets so they render
+    -- with up-to-date text / colors / fills / press flags this frame.
+    sync_hud()
 end
 
 local function game_mousedown(x, y, button)
@@ -432,28 +594,11 @@ local function game_mousedown(x, y, button)
 
     if state.mode ~= STATE_PLAYING then return end  -- game_over_reveal: input locked
 
-    -- Pause button — top-right, 42×42 at (PAUSE_BTN_X, PAUSE_BTN_Y). Tested
-    -- before everything else in PLAYING so it can't double as a missclick.
-    if pointInRect(x, y, PAUSE_BTN_X, PAUSE_BTN_Y, 42, 42) then
-        enterPaused()
-        return
-    end
-
-    -- Joker button — tested first so a button click never falls through
-    -- to portrait hit-testing. Press flash registers regardless.
-    if pointInRect(x, y, JOKER_BTN_X, JOKER_BTN_Y, 42, 42) then
-        state.joker_press = JOKER_PRESS_DURATION
-        if state.jokers > 0 then
-            local d = firstUnfound()
-            if d then
-                awardFind(d, true)
-                state.jokers = state.jokers - 1
-            end
-        else
-            snd_play("wrong")
-        end
-        return
-    end
+    -- Forward to the HUD panel — pause / joker buttons own their own
+    -- hit-tests and fire on_click on mouseup. Pause and joker bbox
+    -- live entirely outside the portrait area, so a click that lands
+    -- on a button never falls through to a portrait hit-test below.
+    root:mousedown(x, y, button)
 
     local lx, ly, base_x = clickToPortraitLocal(x, y)
     if not lx then return end
@@ -477,100 +622,12 @@ local function game_render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
     draw_blur("image_1a", { width = 16, alpha = 0.6 })
 
-    -- ---- HUD top row ----
-    draw_text("LEVEL", LEVEL_X, TOP_LABELS_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-    draw_text(string.format("%d", state.level), LEVEL_X - 20, TOP_NUMBERS_Y, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = CURRENT_COLOR
-	})
-    draw_text(string.format("%d", state.level_count), LEVEL_X + 20, TOP_NUMBERS_Y, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = TOTAL_COLOR
-	})
-    draw_text("/", LEVEL_X, TOP_SLASH_LABELS_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-
-    draw_text("FOUND", FOUND_X, TOP_LABELS_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-    draw_text(string.format("%d", table.getn(state.found)), FOUND_X - 20, TOP_NUMBERS_Y, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = CURRENT_COLOR
-	})
-    draw_text(string.format("%d", DIFF_COUNT), FOUND_X + 20, TOP_NUMBERS_Y, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = TOTAL_COLOR
-	})
-    draw_text("/", FOUND_X, TOP_SLASH_LABELS_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-
-    draw_text("SCORE", SCORE_X, TOP_LABELS_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-    draw_text(string.format("%d", state.score), SCORE_X, TOP_NUMBERS_Y, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = SCORE_COLOR
-	})
-
-    draw_text("JOKER", JOKER_X, JOKER_Y, {
-	  align = ALIGN_CENTER,
-	  color = SMALL_LABEL_COLOR
-	})
-    draw_text(string.format("%d", state.jokers), JOKER_X, JOKER_Y + 16, {
-	  align = ALIGN_CENTER,
-	  font = "large",
-	  color = CURRENT_COLOR
-	})
-
-    -- Pause button — top-right corner.
-    draw_region("pause_button_up", PAUSE_BTN_X, PAUSE_BTN_Y)
-
-    -- Joker button — center-bottom. Press flash swaps to the "_down" art
-    -- briefly after each click; otherwise the "_up" art sits idle.
-    local joker_btn = (state.joker_press > 0) and "joker_button_down"
-                                              or  "joker_button_up"
-    draw_region(joker_btn, JOKER_BTN_X, JOKER_BTN_Y)
-
-    -- ---- Timer bar ----
-    -- Last-10s warning: foreground alpha pulses 1.0 → 0.2 → 1.0 once per
-    -- LOW_TIME_CYCLE seconds (5 cycles over the final 10s). Cosine gives
-    -- a smoother shape than a triangle wave. Stops when not in PLAYING.
-    local bar_alpha = 1.0
-    if state.mode == STATE_PLAYING and state.time_left <= LOW_TIME_THRESHOLD then
-        local phase = (LOW_TIME_THRESHOLD - state.time_left) / LOW_TIME_CYCLE
-        bar_alpha = 0.6 + 0.4 * math.cos(2 * math.pi * phase)
-    end
-    draw_region("timebar_bg", BAR_X, BAR_Y)
-    draw_region("timebar", BAR_X + 1, BAR_Y + 1, {
-        fill_x = state.time_left / state.time_total,
-        alpha  = bar_alpha,
-    })
-
-    -- ---- Stars ----
-    for i = 1, DIFF_COUNT do
-        local kind = (i <= #state.found) and "star" or "star_empty"
-        draw_region(kind, STAR_X, IMG_Y + (STAR_SIZE + 8) * (i - 1))
-    end
-
-    -- ---- Portraits with frame ----
-    draw_region("image_bg", IMG_LEFT_X, IMG_Y)
-    draw_region("image_1a", IMG_LEFT_X + 1, IMG_Y + 1)
-    draw_region("image_bg", IMG_RIGHT_X, IMG_Y)
-    draw_region("image_1b", IMG_RIGHT_X + 1, IMG_Y + 1)
+    -- HUD panel — portrait frames + portraits, timebar, stars, text
+    -- labels, pause + joker buttons. Sync_hud (called at end of
+    -- game_update) refreshes labels / regions / fills / press flags
+    -- from game state. Paints before the dynamic overlays below so
+    -- ellipses and popups land on top of the portraits.
+    root:draw()
 
     -- ---- Found markers (green / yellow ellipses, mirrored) ----
     local green  = { 0.3, 1.0, 0.4, 1.0 }
