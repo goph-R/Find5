@@ -185,8 +185,15 @@ int main(int argc, char *argv[])
     TexBlurCache blurCache;
     texBlurInit(&blurCache);
     ScriptSystem script;
+    /* Per-user persistence path: AppData\Find5\find5.dat (Windows) or
+       ~/.config/Find5/find5.dat (Unix). Falls back to "find5.dat" next
+       to the exe when no user-config dir is reachable (e.g. Win98).
+       optPath is static so the buffer outlives ScriptSystem's borrowed
+       pointer. */
+    static char optPath[512];
+    scriptResolveConfigPath("Find5", "find5.dat", optPath, sizeof(optPath));
     scriptInit(&script, &ui, &snd, &sndLib, &mus, &musLib, &assetReg,
-               &texCache, &blurCache, "find5.dat");
+               &texCache, &blurCache, optPath);
     scriptLoadAssets(&script, "assets.lua");
     scriptInstallConsolePrint(&script);
 
