@@ -4,9 +4,10 @@
 -- GAME_OVER (with a staggered red-ellipse reveal of the missed diffs).
 -- Clicking in either terminal state restarts the level.
 
-local LEVELS = require "levels"
-local dialog = require "dialog"
-local scene  = require "engine.scene"
+local LEVELS     = require "levels"
+local dialog     = require "dialog"
+local scene      = require "engine.scene"
+local transition = require "engine.transition"
 
 -- Pick a single image pair to play for now. Multi-image / multi-category
 -- rotation lands with the title screen.
@@ -605,7 +606,10 @@ end
 
 local function game_render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
-    draw_blur("image_1a", { width = 16, alpha = 0.6 })
+    -- Multiply by root.alpha so the blur fades in / out with the rest
+    -- of the scene during a transition — otherwise it pops in at full
+    -- opacity while the HUD widgets are still fading.
+    draw_blur("image_1a", { width = 16, alpha = 0.6 * root.alpha })
 
     -- HUD panel — portrait frames + portraits, timebar, stars, text
     -- labels, pause + joker buttons. Sync_hud (called at end of
@@ -701,7 +705,7 @@ function game_scene:render()        game_render()           end
 -- still plays the single hard-coded portrait pair) but the plumbing is
 -- in place for when image selection lands.
 function _G.find5_start_game(category)
-    scene.replace(game_scene)
+    scene.replace(game_scene, transition.fade(0.4))
 end
 
 -- Menu's close button signals quit. SDL has no Lua-side quit binding, so
