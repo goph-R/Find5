@@ -271,6 +271,7 @@ int main(int argc, char *argv[])
         uiEnd(&ui);
 
         SDL_GL_SwapBuffers();
+        SDL_Delay(1);
     }
 
     scriptShutdown(&script);
