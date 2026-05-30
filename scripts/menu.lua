@@ -17,6 +17,7 @@
 -- this scene for the game scene.
 
 local widget = require "engine.widget"
+local anim   = require "engine.animation"
 local LEVELS = require "levels"
 
 -- ---- Layout (virtual canvas: 480 tall, origin center, Y-down) -------------
@@ -143,7 +144,7 @@ end
 -- by remembering which slot was focused before — same slot on the new list
 -- gets focus back, which works because the slot order is stable.
 
-local FOCUS_SLOT_START = 6   -- Start game is children[6]
+local FOCUS_SLOT_START = 7   -- Start game is children[7] (logo at [1])
 
 rebuild = function()
     local prev_slot
@@ -156,7 +157,15 @@ rebuild = function()
     root.children = {}
     root.focused_child = nil
 
-    -- 1. Close (top-right). A small button_up 9-patch with the X icon.
+    -- 1. Logo (top-center). Non-focusable so the panel skips it for
+    -- focus claims; drawn first so it sits behind everything that
+    -- follows.
+    root:add(widget.image({
+        x = 0, y = LOGO_Y, region = "logo",
+        align = ALIGN_CENTER + ALIGN_TOP,
+    }))
+
+    -- 2. Close (top-right). A small button_up 9-patch with the X icon.
     root:add(widget.button({
         x = CLOSE_X, y = CLOSE_Y, width = CLOSE_SIZE, height = CLOSE_SIZE,
         bg_up = "button_up", bg_down = "button_down",
@@ -165,7 +174,7 @@ rebuild = function()
         on_click = close_action,
     }))
 
-    -- 2-3. Category picker arrows.
+    -- 3-4. Category picker arrows.
     root:add(make_icon_button({
         x = LEFT_BTN_X, y = PICKER_Y_TL,
         icon = at_first() and "left_disabled_icon" or "left_icon",
@@ -179,7 +188,7 @@ rebuild = function()
         on_click = next_cat_action,
     }))
 
-    -- 4-5. Audio toggles.
+    -- 5-6. Audio toggles.
     root:add(make_icon_button({
         x = SOUND_BTN_X, y = TOGGLE_BTN_Y,
         icon = opt_get("sound_on", true) and "sound_on_icon" or "sound_off_icon",
@@ -191,7 +200,7 @@ rebuild = function()
         on_click = music_toggle_action,
     }))
 
-    -- 6. Start game — primary action, large font, default focus target.
+    -- 7. Start game — primary action, large font, default focus target.
     root:add(make_text_button({
         x = START_BTN_X, y = START_BTN_Y,
         width = START_BTN_W, height = START_BTN_H,
@@ -199,7 +208,7 @@ rebuild = function()
         on_click = start_game_action,
     }))
 
-    -- 7-8. Secondary buttons.
+    -- 8-9. Secondary buttons.
     root:add(make_text_button({
         x = HISC_BTN_X, y = SUB_BTN_Y, width = SUB_BTN_W,
         text = "Highscores", on_click = highscores_action,
@@ -239,6 +248,22 @@ function menu_scene:enter()
     if opt_get("music_on", true) then
         music_play("title", 0.5, true)
     end
+
+    -- Staggered pop-in: each button fades + scales from 0.7 to 1.0
+    -- around its own center, 50 ms apart in declaration order. The
+    -- ease_out_back overshoots a touch and snaps back so the buttons
+    -- have a bit of bounce on arrival.
+    for i, child in ipairs(root.children) do
+        child.alpha = 0
+        child.scale = 0.7
+        child.action = anim.sequence{
+            anim.delay(0.05 * (i - 1)),
+            anim.parallel{
+                anim.fade_in(0.25),
+                anim.scale_to(1.0, 0.35, anim.ease_out_back),
+            },
+        }
+    end
 end
 
 function menu_scene:render()
@@ -248,9 +273,6 @@ function menu_scene:render()
     draw_region("menu_bg", -vw / 2, -vh / 2, {
         scale_x = vw / 512, scale_y = vh / 512,
     })
-
-    -- Logo: anchored to its top edge.
-    draw_region("logo", 0, LOGO_Y, { align = ALIGN_CENTER + ALIGN_TOP })
 
     -- Category preview: category image inset 1 px, then frame (over image)
     -- the title caption near the bottom of the frame.
