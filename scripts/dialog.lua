@@ -31,7 +31,7 @@
 --                            visual height = height + dialog_bg_bottom's
 --                            native height (the bottom strip is static).
 --                            Default: top region's native height (no clip).
---   buttons        array of { x, y, w, h, label, action | replace }
+--   buttons        array of { x, y, w, h, label, action | replace, skip_outro }
 --                   positions in dialog-local coords (origin = dialog CENTER).
 --                   `action`  — function fired AFTER the outro animation
 --                              completes. Latched in pending_action;
@@ -43,6 +43,16 @@
 --                              the new one slides in without fading the
 --                              dim back up — seamless dialog-to-dialog
 --                              hand-off. Takes precedence over `action`.
+--                   `skip_outro` — boolean. When true, on_click fires
+--                              `action` IMMEDIATELY (no outro animation,
+--                              no dim fade); the dialog keeps rendering
+--                              at rest until something else hides it.
+--                              Pair with dialog.dismiss() at the right
+--                              cleanup moment (typically scene:exit())
+--                              so the action's downstream effect — a
+--                              scene fade-to-black, say — owns the
+--                              visual hand-off without the dialog
+--                              playing a redundant outro underneath.
 --   draw_body      function(intro_done, t, anchor_x, anchor_y)
 --                   called every frame after the widget tree draws;
 --                   (anchor_x, anchor_y) is the dialog's CENTER on screen,
@@ -225,12 +235,13 @@ local function build_tree(spec)
     --   * else → latch `action` into pending_action and start a normal
     --     close; dlg.on_action_done fires the action once outro lands.
     for _, btn in ipairs(spec.buttons or {}) do
-        local bw   = btn.w or 200
-        local bh   = btn.h or 48
-        local cx   = btn.x or 0
-        local cy   = btn.y or 0
-        local act  = btn.action
-        local repl = btn.replace
+        local bw    = btn.w or 200
+        local bh    = btn.h or 48
+        local cx    = btn.x or 0
+        local cy    = btn.y or 0
+        local act   = btn.action
+        local repl  = btn.replace
+        local skipo = btn.skip_outro
         local b = widget.button{
             x = dlg_w * 0.5 + cx - bw * 0.5,
             y = dlg_h * 0.5 + cy - bh * 0.5,
@@ -245,6 +256,13 @@ local function build_tree(spec)
                     local next_spec = type(repl) == "function"
                                       and repl() or repl
                     M.replace(next_spec)
+                elseif skipo and act then
+                    -- Skip the outro: fire the action right now. The
+                    -- dialog stays rendered at rest until the action's
+                    -- downstream effect (typically a scene fade) covers
+                    -- it; the host scene should call dialog.dismiss()
+                    -- from its :exit so the dialog state doesn't leak.
+                    act()
                 else
                     pending_action = act
                     M.close()
@@ -348,6 +366,19 @@ function M.replace(next_spec)
     end
     pending_replace = next_spec
     M.close()
+end
+
+-- Clear all dialog state with no animation. Used when something else is
+-- taking over the visual hand-off (a scene fade, e.g.) and we want the
+-- dialog to vanish without playing its outro under the new effect.
+-- Pair with a button's `skip_outro = true`: skip_outro fires the action
+-- right away and leaves the dialog visible; the action's downstream
+-- (scene transition) covers it, and the host calls dismiss() at the
+-- right cleanup moment — usually scene:exit on the leaving scene.
+function M.dismiss()
+    current         = nil
+    pending_action  = nil
+    pending_replace = nil
 end
 
 function M.update(dt)

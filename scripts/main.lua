@@ -15,12 +15,13 @@ local current_pair  = LEVELS.categories[1].images[1]
 local current_diffs = current_pair.diffs
 
 -- ---- State-machine modes ----
-local STATE_PLAYING          = "playing"
-local STATE_PAUSED           = "paused"
-local STATE_LEVEL_COMPLETE   = "level_complete"
-local STATE_GAME_OVER_REVEAL = "game_over_reveal"
-local STATE_GAME_OVER        = "game_over"
-local STATE_ALL_DONE         = "all_done"
+local STATE_PLAYING               = "playing"
+local STATE_PAUSED                = "paused"
+local STATE_LEVEL_COMPLETE_WAIT   = "level_complete_wait"
+local STATE_LEVEL_COMPLETE        = "level_complete"
+local STATE_GAME_OVER_REVEAL      = "game_over_reveal"
+local STATE_GAME_OVER             = "game_over"
+local STATE_ALL_DONE              = "all_done"
 
 -- ---- Tunables -------------------------------------------------------------
 local DIFF_COUNT             = LEVELS.diff_count
@@ -29,6 +30,7 @@ local MISS_FLASH_MAX_ALPHA   = 0.5
 local ELLIPSE_DRAW_DURATION  = 0.4
 local REVEAL_STAGGER         = 0.25  -- delay between consecutive red ellipses
 local REVEAL_DWELL           = 0.8   -- pause after the last reveal before GAME_OVER text
+local LEVEL_COMPLETE_DWELL   = 0.6   -- pause AFTER the last ellipse finishes before COMPLETED dialog
 local LOW_TIME_THRESHOLD     = 10.0  -- seconds at which the timebar starts pulsing
 local LOW_TIME_CYCLE         = 2.0   -- one fade cycle (1.0 → 0.2 → 1.0) takes this long
 local FIND_POINTS            = 100   -- per-diff bonus on find (click or joker)
@@ -50,6 +52,7 @@ local state = {
     miss_flash   = 0,
     mode         = STATE_PLAYING,
     reveal_t     = 0,                   -- secs in GAME_OVER_REVEAL
+    wait_t       = 0,                   -- secs in LEVEL_COMPLETE_WAIT
     score_popups = {},                  -- floating "+N" texts: { x, y, value, t }
     score_anim   = nil,                 -- level-end count-up: { from, to, t }
 }
@@ -148,6 +151,7 @@ local function start_level(n)
     state.found        = {}
     state.miss_flash   = 0
     state.reveal_t     = 0
+    state.wait_t       = 0
     state.score_popups = {}
     state.score_anim   = nil
     state.mode         = STATE_PLAYING
@@ -331,8 +335,13 @@ confirm_exit_spec_fn = function()
         buttons = {
             { x = -60, y = 110, w = 100, h = 56,
               label = "No",  replace = pause_spec_fn },
+            -- skip_outro so the dialog doesn't slide+fade FIRST and
+            -- THEN the scene fade-to-black starts. The dialog stays
+            -- at rest visually while the overlay grows over it; the
+            -- game scene's :exit dismisses the dialog state at swap.
             { x =  60, y = 110, w = 100, h = 56,
-              label = "Yes", action  = exit_to_main_menu },
+              label = "Yes", action = exit_to_main_menu,
+              skip_outro = true },
         },
     }
 end
@@ -391,6 +400,7 @@ end
 -- changes every tick and doesn't map onto stable widget fields.
 
 local widget = require "engine.widget"
+local anim   = require "engine.animation"
 
 local root = widget.panel({ x = 0, y = 0 })
 
@@ -409,13 +419,28 @@ local timebar_fg = widget.image{
 }
 root:add(timebar_fg)
 
--- Layer 3: stars. Region of each is swapped between "star" and
--- "star_empty" in sync_hud based on how many diffs have been found.
-local star_widgets = {}
+-- Layer 3: stars. Each slot is two widgets — star_bg is always
+-- visible, star (the gold graphic) sits on top and starts invisible
+-- (alpha = 0, scale = 1.5). When a diff is found, sync_hud kicks off
+-- a pop animation on the matching star (scale 1.5 → 1.0, alpha 0 → 1,
+-- 0.5 s). Two passes: ALL bgs first, then ALL stars on top — so a
+-- popping star scaling out past its own slot doesn't get covered by
+-- the next slot's bg.
+local star_bg_widgets = {}
+local star_widgets    = {}
+local function star_pos(i)
+    return STAR_X, IMG_Y + (STAR_SIZE + 8) * (i - 1)
+end
 for i = 1, DIFF_COUNT do
+    local sx, sy = star_pos(i)
+    star_bg_widgets[i] = widget.image{ x = sx, y = sy, region = "star_bg" }
+    root:add(star_bg_widgets[i])
+end
+for i = 1, DIFF_COUNT do
+    local sx, sy = star_pos(i)
     star_widgets[i] = widget.image{
-        x = STAR_X, y = IMG_Y + (STAR_SIZE + 8) * (i - 1),
-        region = "star_empty",
+        x = sx, y = sy, region = "star",
+        alpha = 0, scale = 1.5,
     }
     root:add(star_widgets[i])
 end
@@ -463,14 +488,16 @@ local joker_count  = add_text(JOKER_X, JOKER_Y + 16, "0",
                               { font = "large", color = CURRENT_COLOR })
 
 -- Layer 5: buttons. pause (top-right) and joker (center-bottom). Both
--- use bg_up / bg_down regions; the 9-patch fallback degrades to a
--- stretched single draw_region when the region has no slice, so at
--- native size (42x42) they paint pixel-identical to the old direct
--- draw_region calls.
+-- use the standard button trio (button_up / button_down / button_hover)
+-- with pause_icon / joker_icon centered over them.
 local pause_button = widget.button{
     x = PAUSE_BTN_X, y = PAUSE_BTN_Y, width = 42, height = 42,
-    bg_up = "pause_button_up", bg_down = "pause_button_down",
-    on_click = function() enter_paused() end,
+    bg_up      = "button_up",
+    bg_down    = "button_down",
+    bg_hover   = "button_hover",
+    icon       = "pause_icon",
+    icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
+    on_click   = function() enter_paused() end,
 }
 -- HUD buttons are mouse-only. Mark non-focusable BEFORE :add so the
 -- panel's auto-focus walk skips them — otherwise pressing Enter or
@@ -480,11 +507,25 @@ root:add(pause_button)
 
 local joker_button = widget.button{
     x = JOKER_BTN_X, y = JOKER_BTN_Y, width = 42, height = 42,
-    bg_up = "joker_button_up", bg_down = "joker_button_down",
-    on_click = function() joker_action() end,
+    bg_up      = "button_up",
+    bg_down    = "button_down",
+    bg_hover   = "button_hover",
+    icon       = "joker_icon",
+    icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
+    on_click   = function() joker_action() end,
 }
 joker_button.focusable = false
 root:add(joker_button)
+
+-- Watch state.found's length across frames so we can fire the pop
+-- animation on whichever stars just lit up (growth) and snap stars
+-- back to the empty visual on level reset (shrink).
+local prev_found_count = 0
+-- Fade is short so the star snaps visible; scale runs longer with
+-- bounce_out so the settle has multiple visible bounces (lands at
+-- 1.0, bounces up to ~1.125, settles, smaller bounce, etc.).
+local STAR_FADE_DURATION  = 0.15
+local STAR_SCALE_DURATION = 0.5
 
 -- Per-frame: pull labels / regions / fills / alphas from game state.
 local function sync_hud()
@@ -494,9 +535,33 @@ local function sync_hud()
     score_label.text   = tostring(state.score)
     joker_count.text   = tostring(state.jokers)
 
-    for i = 1, DIFF_COUNT do
-        star_widgets[i].region = (i <= #state.found) and "star" or "star_empty"
+    local found_count = #state.found
+    if found_count > prev_found_count then
+        -- One or more diffs just resolved. Animate each newly-lit star
+        -- in from scale 1.5 / alpha 0 to its rest state in parallel.
+        for i = prev_found_count + 1, found_count do
+            local s = star_widgets[i]
+            s.alpha = 0
+            s.scale = 1.5
+            s.action = anim.parallel{
+                anim.fade_to(1.0, STAR_FADE_DURATION,  anim.ease_out),
+                anim.scale_to(1.0, STAR_SCALE_DURATION, anim.bounce_out),
+            }
+        end
+    elseif found_count < prev_found_count then
+        -- Reset (level / run restart). Snap every star to its empty
+        -- visual; cancel any animation in flight.
+        for i = 1, DIFF_COUNT do
+            local s = star_widgets[i]
+            s.action = nil
+            if i <= found_count then
+                s.alpha, s.scale = 1.0, 1.0
+            else
+                s.alpha, s.scale = 0.0, 1.5
+            end
+        end
     end
+    prev_found_count = found_count
 
     timebar_fg.fill_x = state.time_left / state.time_total
 
@@ -568,9 +633,19 @@ local function game_update(dt)
             if state.time_left < 0 then state.time_left = 0 end
         end
         if #state.found >= DIFF_COUNT then
-            enter_level_complete()
+            -- Defer the dialog: wait for the last ellipse to finish
+            -- drawing, plus LEVEL_COMPLETE_DWELL extra so the win
+            -- registers before the modal drops in.
+            state.mode   = STATE_LEVEL_COMPLETE_WAIT
+            state.wait_t = 0
         elseif state.time_left <= 0 then
             enter_game_over_reveal()
+        end
+
+    elseif state.mode == STATE_LEVEL_COMPLETE_WAIT then
+        state.wait_t = state.wait_t + dt
+        if state.wait_t >= ELLIPSE_DRAW_DURATION + LEVEL_COMPLETE_DWELL then
+            enter_level_complete()
         end
 
     elseif state.mode == STATE_GAME_OVER_REVEAL then
@@ -589,6 +664,11 @@ local function game_update(dt)
     -- Push the latest game state into the HUD widgets so they render
     -- with up-to-date text / colors / fills / press flags this frame.
     sync_hud()
+
+    -- Tick the HUD panel so children's actions (e.g. the star pop-in
+    -- attached by sync_hud) advance. scene.dispatch_update only ticks
+    -- t.root.action — children's actions need root:update to run.
+    root:update(dt)
 end
 
 local function game_mousedown(x, y, button)
@@ -751,6 +831,16 @@ function game_scene:mousedown(x, y, b) game_mousedown(x, y, b) end
 function game_scene:mouseup(x, y, b)   game_mouseup(x, y, b)   end
 function game_scene:mousemove(x, y, dx, dy) game_mousemove(x, y, dx, dy) end
 function game_scene:render()        game_render()           end
+
+-- Clean up the dialog state when leaving the game scene. The Yes /
+-- Exit-to-main-menu path uses skip_outro on the dialog button — it
+-- fires exit_to_main_menu immediately and the dialog stays rendered
+-- at rest underneath the scene fade-to-black. Once the scene swap
+-- pops game_scene mid-overlay, this exit clears the orphaned dialog
+-- state so a fresh game_scene later starts with no leftover modal.
+function game_scene:exit()
+    dialog.dismiss()
+end
 
 -- Menu hands off to the game by calling this global. category arg is the
 -- entry from levels.lua's `categories` array; not used yet (the engine
