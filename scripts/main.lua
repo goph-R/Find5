@@ -43,7 +43,7 @@ local state = {
     score        = 0,
     jokers       = LEVELS.joker_max,
     joker_max    = LEVELS.joker_max,
-    time_total   = LEVELS.time_start,   -- set per-level by startLevel()
+    time_total   = LEVELS.time_start,   -- set per-level by start_level()
     time_left    = LEVELS.time_start,
     diffs        = current_diffs,
     found        = {},
@@ -88,11 +88,11 @@ local PORTRAIT_H = 415
 
 -- ---- Helpers --------------------------------------------------------------
 
-local function pointInRect(px, py, rx, ry, rw, rh)
+local function point_in_rect(px, py, rx, ry, rw, rh)
     return px >= rx and px < rx + rw and py >= ry and py < ry + rh
 end
 
-local function isFound(d)
+local function is_found(d)
     for _, f in ipairs(state.found) do
         if f.x == d.x and f.y == d.y and f.w == d.w and f.h == d.h then
             return true
@@ -104,7 +104,7 @@ end
 -- Returns (lx, ly, base_x) where lx/ly are portrait-local px and base_x
 -- is the canvas x of the clicked portrait's top-left (so popups can be
 -- placed on the actual side the player clicked).
-local function clickToPortraitLocal(x, y)
+local function click_to_portrait_local(x, y)
     local left_x  = IMG_LEFT_X  + 1
     local right_x = IMG_RIGHT_X + 1
     local top_y   = IMG_Y       + 1
@@ -118,20 +118,20 @@ local function clickToPortraitLocal(x, y)
     return nil
 end
 
-local function firstUnfound()
+local function first_unfound()
     for _, d in ipairs(state.diffs) do
-        if not isFound(d) then return d end
+        if not is_found(d) then return d end
     end
     return nil
 end
 
-local function unfoundCount()
+local function unfound_count()
     return DIFF_COUNT - #state.found
 end
 
 -- Time budget for level `n` lerped linearly from LEVELS.time_start at level 1
 -- to LEVELS.time_end at level_count. Single-level runs just use time_start.
-local function levelTimeBudget(n)
+local function level_time_budget(n)
     if LEVELS.level_count <= 1 then return LEVELS.time_start end
     local f = (n - 1) / (LEVELS.level_count - 1)
     if f < 0 then f = 0 elseif f > 1 then f = 1 end
@@ -140,10 +140,10 @@ end
 
 -- Per-level reset. Doesn't touch state.score or state.jokers — both
 -- persist across levels for the whole session. Jokers reset only on
--- newRun().
-local function startLevel(n)
+-- new_run().
+local function start_level(n)
     state.level        = n
-    state.time_total   = levelTimeBudget(n)
+    state.time_total   = level_time_budget(n)
     state.time_left    = state.time_total
     state.found        = {}
     state.miss_flash   = 0
@@ -153,24 +153,24 @@ local function startLevel(n)
     state.mode         = STATE_PLAYING
 end
 
-local function settleScoreAnim()
+local function settle_score_anim()
     if state.score_anim then
         state.score = state.score_anim.to
         state.score_anim = nil
     end
 end
 
--- Forward-declared so enterAllDone / enterGameOver can capture it as
+-- Forward-declared so enter_all_done / enter_game_over can capture it as
 -- an upvalue for their Retry / Play-again button actions. The body
 -- comes further down; everything in between can refer to it.
-local newRun
+local new_run
 
 -- Forward decls for the symbols the HUD widgets' on_click closures
 -- need. The actual function bodies are assigned further down (after
 -- the helpers they each use are defined).
-local enterPaused, joker_action
+local enter_paused, joker_action
 
-local function enterAllDone()
+local function enter_all_done()
     state.mode = STATE_ALL_DONE
     -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
     -- once jokers became persistent — same jokers would have been counted
@@ -189,9 +189,8 @@ local function enterAllDone()
         buttons = {
             {
                 x = 0, y = 110, w = 240, h = 56,
-                region = "button_blue_up",
                 label  = "Play again",
-                action = newRun,
+                action = new_run,
             },
         },
         draw_body = function(intro_done, t, ax, ay)
@@ -211,7 +210,7 @@ local function enterAllDone()
     })
 end
 
-local function enterGameOver()
+local function enter_game_over()
     state.mode = STATE_GAME_OVER
 
     dialog.show({
@@ -219,9 +218,8 @@ local function enterGameOver()
         buttons = {
             {
                 x = 0, y = 110, w = 240, h = 56,
-                region = "button_blue_up",
                 label  = "Retry",
-                action = newRun,
+                action = new_run,
             },
         },
         draw_body = function(intro_done, t, ax, ay)
@@ -238,27 +236,27 @@ end
 
 -- Continue past LEVEL_COMPLETE. Wraps to STATE_ALL_DONE after the final
 -- level; otherwise advances and resets.
-local function continueToNextLevel()
-    settleScoreAnim()
+local function continue_to_next_level()
+    settle_score_anim()
     if state.level >= LEVELS.level_count then
-        enterAllDone()
+        enter_all_done()
     else
-        startLevel(state.level + 1)
+        start_level(state.level + 1)
     end
 end
 
 -- Reset back to level 1 fresh. Used by GAME_OVER → retry and ALL_DONE → play
 -- again. Wipes score AND jokers (the session ended).
-newRun = function()
+new_run = function()
     state.score  = 0
     state.jokers = state.joker_max
-    startLevel(1)
+    start_level(1)
 end
 
-local function enterLevelComplete()
+local function enter_level_complete()
     state.mode = STATE_LEVEL_COMPLETE
     -- Only time bonus per level; joker bonus is held until session end
-    -- (see enterAllDone). Avoids paying out unused jokers every level.
+    -- (see enter_all_done). Avoids paying out unused jokers every level.
     local time_bonus = math.floor(state.time_left * 10)
     state.time_bonus = time_bonus    -- snapshot for the dialog body
     state.score_anim = {
@@ -270,9 +268,8 @@ local function enterLevelComplete()
         buttons = {
             {
                 x = 0, y = 110, w = 240, h = 56,
-                region = "button_blue_up",
                 label  = "Next level >",
-                action = continueToNextLevel,
+                action = continue_to_next_level,
             },
         },
         draw_body = function(intro_done, t, ax, ay)
@@ -295,32 +292,60 @@ local function enterLevelComplete()
     })
 end
 
-local function enterGameOverReveal()
+local function enter_game_over_reveal()
     state.mode     = STATE_GAME_OVER_REVEAL
     state.reveal_t = 0
 end
 
-local function resumePlaying() state.mode = STATE_PLAYING end
+local function resume_playing() state.mode = STATE_PLAYING end
+
+-- Exit-to-menu: reset state so a new game starts fresh next time the
+-- player picks "Start game" from the menu, then transition out. Action
+-- fires AFTER the confirm dialog's outro (the normal action path), so
+-- the dim has already faded by the time scene.replace runs.
+local function exit_to_main_menu()
+    scene.replace(require("menu"), transition.fade_through_black(0.6))
+end
+
+-- Pause + confirm specs cross-reference each other (Exit → confirm,
+-- No → back to pause), so both are factory functions sharing a forward
+-- declaration. The dialog module resolves a function-form `replace`
+-- lazily at click time — no init cycle, no stale closures.
+local pause_spec_fn, confirm_exit_spec_fn
+
+pause_spec_fn = function()
+    return {
+        title = "PAUSED",
+        buttons = {
+            { x = 0, y =  45, w = 240, h = 56,
+              label = "Resume",            action = resume_playing },
+            { x = 0, y = 110, w = 240, h = 56,
+              label = "Exit to main menu", replace = confirm_exit_spec_fn },
+        },
+    }
+end
+
+confirm_exit_spec_fn = function()
+    return {
+        title = "Exit to main menu?",
+        buttons = {
+            { x = -60, y = 110, w = 100, h = 56,
+              label = "No",  replace = pause_spec_fn },
+            { x =  60, y = 110, w = 100, h = 56,
+              label = "Yes", action  = exit_to_main_menu },
+        },
+    }
+end
 
 -- Assigning to the forward-declared upvalue (NOT `local function`) so
 -- the HUD widgets' on_click closure resolves to this body.
-enterPaused = function()
+enter_paused = function()
     state.mode = STATE_PAUSED
-    dialog.show({
-        title = "PAUSED",
-        buttons = {
-            {
-                x = 0, y = 110, w = 240, h = 56,
-                region = "button_blue_up",
-                label  = "Resume",
-                action = resumePlaying,
-            },
-        },
-    })
+    dialog.show(pause_spec_fn())
 end
 
 -- Add a "+N" floating text at canvas (x, y) tied to the next on_render.
-local function pushScorePopup(x, y, value)
+local function push_score_popup(x, y, value)
     table.insert(state.score_popups, { x = x, y = y, value = value, t = 0 })
 end
 
@@ -331,14 +356,14 @@ end
 -- like a reward for *finding*, not for spending a joker.
 -- click_lx/ly are portrait-local px; base_x is the canvas x of the
 -- clicked portrait's top-left. All three are nil for joker reveals.
-local function awardFind(d, by_joker, click_lx, click_ly, base_x)
+local function award_find(d, by_joker, click_lx, click_ly, base_x)
     table.insert(state.found, {
         x = d.x, y = d.y, w = d.w, h = d.h,
         joker = by_joker, t = 0,
     })
     if not by_joker then
         state.score = state.score + FIND_POINTS
-        pushScorePopup(base_x + click_lx, IMG_Y + 1 + click_ly, FIND_POINTS)
+        push_score_popup(base_x + click_lx, IMG_Y + 1 + click_ly, FIND_POINTS)
     end
 end
 
@@ -347,9 +372,9 @@ end
 -- mousedown/mouseup cycle — no timer needed.
 joker_action = function()
     if state.jokers > 0 then
-        local d = firstUnfound()
+        local d = first_unfound()
         if d then
-            awardFind(d, true)
+            award_find(d, true)
             state.jokers = state.jokers - 1
         end
     else
@@ -445,7 +470,7 @@ local joker_count  = add_text(JOKER_X, JOKER_Y + 16, "0",
 local pause_button = widget.button{
     x = PAUSE_BTN_X, y = PAUSE_BTN_Y, width = 42, height = 42,
     bg_up = "pause_button_up", bg_down = "pause_button_down",
-    on_click = function() enterPaused() end,
+    on_click = function() enter_paused() end,
 }
 -- HUD buttons are mouse-only. Mark non-focusable BEFORE :add so the
 -- panel's auto-focus walk skips them — otherwise pressing Enter or
@@ -514,7 +539,7 @@ local function game_update(dt)
         if state.miss_flash < 0 then state.miss_flash = 0 end
     end
 
-    -- Score count-up animation (set by enterLevelComplete). Updates the
+    -- Score count-up animation (set by enter_level_complete). Updates the
     -- displayed state.score; settles to .to once the duration elapses.
     if state.score_anim then
         state.score_anim.t = state.score_anim.t + dt
@@ -543,21 +568,21 @@ local function game_update(dt)
             if state.time_left < 0 then state.time_left = 0 end
         end
         if #state.found >= DIFF_COUNT then
-            enterLevelComplete()
+            enter_level_complete()
         elseif state.time_left <= 0 then
-            enterGameOverReveal()
+            enter_game_over_reveal()
         end
 
     elseif state.mode == STATE_GAME_OVER_REVEAL then
         state.reveal_t = state.reveal_t + dt
-        local n = unfoundCount()
+        local n = unfound_count()
         -- Reveal i starts at i*STAGGER (0-indexed), runs for DURATION,
         -- then we hold for DWELL before opening the GAME_OVER dialog.
         local need = (n > 0)
                      and ((n - 1) * REVEAL_STAGGER + ELLIPSE_DRAW_DURATION + REVEAL_DWELL)
                      or  REVEAL_DWELL
         if state.reveal_t >= need then
-            enterGameOver()
+            enter_game_over()
         end
     end
 
@@ -570,11 +595,14 @@ local function game_mousedown(x, y, button)
     if button ~= 1 then return end
 
     -- An active dialog owns clicks entirely — its button hit-tests run
-    -- inside handle_click, and misses are swallowed (no fall-through
-    -- to game logic underneath the modal). PAUSE / LEVEL_COMPLETE /
-    -- GAME_OVER / ALL_DONE all route through here.
+    -- inside handle_mousedown / handle_mouseup, and misses are
+    -- swallowed (no fall-through to game logic underneath the modal).
+    -- PAUSE / LEVEL_COMPLETE / GAME_OVER / ALL_DONE all route through
+    -- here. NB: widget buttons fire on_click on RELEASE, so we also
+    -- need to route mouseup (see game_mouseup) and mousemove (for
+    -- hover feedback while the dialog is up).
     if dialog.is_active() then
-        dialog.handle_click(x, y)
+        dialog.handle_mousedown(x, y, button)
         return
     end
 
@@ -586,12 +614,12 @@ local function game_mousedown(x, y, button)
     -- on a button never falls through to a portrait hit-test below.
     root:mousedown(x, y, button)
 
-    local lx, ly, base_x = clickToPortraitLocal(x, y)
+    local lx, ly, base_x = click_to_portrait_local(x, y)
     if not lx then return end
 
     for _, d in ipairs(state.diffs) do
-        if not isFound(d) and pointInRect(lx, ly, d.x, d.y, d.w, d.h) then
-            awardFind(d, false, lx, ly, base_x)
+        if not is_found(d) and point_in_rect(lx, ly, d.x, d.y, d.w, d.h) then
+            award_find(d, false, lx, ly, base_x)
             return
         end
     end
@@ -600,6 +628,28 @@ local function game_mousedown(x, y, button)
     state.time_left  = state.time_left - state.time_total / 4
     if state.time_left < 0 then state.time_left = 0 end
     -- snd_play("wrong")
+end
+
+-- Dialog needs mouseup (widget buttons fire on release) and mousemove
+-- (button hover) while it's modally active. When no dialog, fan these
+-- straight to the HUD panel so pause / joker hover + release still work
+-- — we'd otherwise lose the scene's auto-forward path by declaring
+-- mouseup / mousemove on game_scene at all.
+
+local function game_mouseup(x, y, button)
+    if dialog.is_active() then
+        dialog.handle_mouseup(x, y, button)
+        return
+    end
+    root:mouseup(x, y, button)
+end
+
+local function game_mousemove(x, y, dx, dy)
+    if dialog.is_active() then
+        dialog.handle_mousemove(x, y, dx, dy)
+        return
+    end
+    root:mousemove(x, y, dx, dy)
 end
 
 -- ---- Render ---------------------------------------------------------------
@@ -650,7 +700,7 @@ local function game_render()
     if state.mode == STATE_GAME_OVER_REVEAL or state.mode == STATE_GAME_OVER then
         local i = 0
         for _, d in ipairs(state.diffs) do
-            if not isFound(d) then
+            if not is_found(d) then
                 local elapsed = state.reveal_t - i * REVEAL_STAGGER
                 if elapsed > 0 then
                     local finish = elapsed / ELLIPSE_DRAW_DURATION
@@ -692,12 +742,14 @@ local game_scene = { root = root }
 function game_scene:enter()
     -- The current_pair / current_diffs / state table at the top of this
     -- file are already initialised to level-1 fresh, so nothing extra to
-    -- do for the first run. A "play again" path through enterAllDone /
-    -- enterGameOver re-uses newRun() which already resets everything.
+    -- do for the first run. A "play again" path through enter_all_done /
+    -- enter_game_over re-uses new_run() which already resets everything.
 end
 
 function game_scene:update(dt)     game_update(dt)         end
 function game_scene:mousedown(x, y, b) game_mousedown(x, y, b) end
+function game_scene:mouseup(x, y, b)   game_mouseup(x, y, b)   end
+function game_scene:mousemove(x, y, dx, dy) game_mousemove(x, y, dx, dy) end
 function game_scene:render()        game_render()           end
 
 -- Menu hands off to the game by calling this global. category arg is the
@@ -705,7 +757,13 @@ function game_scene:render()        game_render()           end
 -- still plays the single hard-coded portrait pair) but the plumbing is
 -- in place for when image selection lands.
 function _G.find5_start_game(category)
-    scene.replace(game_scene, transition.fade(0.4))
+    -- Reset state before the transition kicks in. The new_run sets
+    -- state from PAUSED / GAME_OVER / wherever back to a fresh PLAYING
+    -- level 1; the overlay covers the menu while this happens, and by
+    -- the time game_scene:enter fires at the swap midpoint the game is
+    -- ready to render fresh.
+    new_run()
+    scene.replace(game_scene, transition.fade_through_black(0.6))
 end
 
 -- Menu's close button signals quit. SDL has no Lua-side quit binding, so
