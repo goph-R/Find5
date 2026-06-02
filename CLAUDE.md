@@ -48,7 +48,7 @@ env ALSOFT_DRIVERS=null timeout 1.5 ./find5 -windowed > /tmp/find5.out 2>&1
 sed -n '1,40p' /tmp/find5.out      # or grep for what you're checking
 ```
 
-A clean boot prints, in order: `Resolution: …`, font atlas built, `opt_load` reading or skipping `find5.dat`, `script: Lua 5.1 initialised`, each asset's load line, `assets: N sound(s), M music, …`, then nothing more until you SIGTERM it. Anything else (e.g. `script:` followed by a Lua traceback, `texBlur: cannot load …`) is a real error worth reading.
+A clean boot prints, in order: `Resolution: …`, font atlas built, `optLoad` reading or skipping `find5.dat`, `script: Lua 5.1 initialised`, each asset's load line, `assets: N sound(s), M music, …`, then nothing more until you SIGTERM it. Anything else (e.g. `script:` followed by a Lua traceback, `texBlur: cannot load …`) is a real error worth reading.
 
 This is enough to confirm "did my Lua syntax compile, did `require` resolve, did the assets register", which covers most refactor regressions. For anything that actually needs to render — colors / layout / animation timing — open it on the dev box; there's no headless visual check.
 
@@ -63,7 +63,7 @@ The whole engine is `main.cpp` plus header-only modules with `static` functions.
 - `sound.h` — OpenAL wrapper. `sndInit` opens the device, `sndLoadWav` reads a 16-bit PCM WAV, `SoundLibrary` is the named registry (groups of variants picked randomly), `sndPlay` fires on a free source.
 - `music.h` — Streaming Ogg Vorbis via stb_vorbis (compiled as its own C TU in `vorbis.o`). `MusicLibrary` is a name→path map; files open lazily on `musicPlay`. Crossfade-capable across 2 simultaneous tracks. Call `musicUpdate(&mus, dt)` once per frame.
 - `asset_registry.h` — name → path lookup for textures (and unused model slots inherited from SDLFun). `assets.lua` populates it via `scriptLoadAssets`.
-- `script.h` — Lua 5.1 glue. `ScriptSystem` holds the `lua_State` plus borrowed pointers to UiState/SoundSystem/SoundLibrary/MusicSystem/MusicLibrary/AssetRegistry/TexCache. Bindings exposed to Lua: `uiShowMessage`, `soundPlay`, `musicPlay`, `musicStop`, `musicVolume`, `key_down`, `mouse_pos`, `mouse_down`, `drawRegion`, `drawText`, `drawEllipse`, `optSet`, `optGet`, `optSave`, `opt_load`. Lua globals set at init: `ALIGN_LEFT/CENTER/RIGHT/TOP/MIDDLE/BOTTOM`, `FLIP_H/FLIP_V`. `scriptLoadAssets` walks the manifest's `sounds` / `music` / `textures` / `fonts` / `regions` subtables and registers each. `scriptCall(s, "onStart")` invokes a nullary global Lua function if defined; `scriptCallUpdate` / `scriptCallKeyDown` / `scriptCallKeyUp` / `scriptCallMouseDown` / `scriptCallMouseUp` / `scriptCallMouseMove` / `scriptCallRender` call the corresponding `on_*` hooks. Missing hooks are no-ops. Two-phase `scriptBeginHook`/`scriptEndHook` is exposed for callers that need to push custom argument types. Reusable options-table helpers (`scr_optfield_num/int/str/color`) for any binding that wants `{ k = v }` style args. The options store auto-loads from `find5.dat` during `scriptInit` (see "Persistence" below).
+- `script.h` — Lua 5.1 glue. `ScriptSystem` holds the `lua_State` plus borrowed pointers to UiState/SoundSystem/SoundLibrary/MusicSystem/MusicLibrary/AssetRegistry/TexCache. Bindings exposed to Lua: `uiShowMessage`, `soundPlay`, `musicPlay`, `musicStop`, `musicVolume`, `keyDown`, `mousePos`, `mouseDown`, `drawRegion`, `drawText`, `drawEllipse`, `optSet`, `optGet`, `optSave`, `optLoad`. Lua globals set at init: `ALIGN_LEFT/CENTER/RIGHT/TOP/MIDDLE/BOTTOM`, `FLIP_H/FLIP_V`. `scriptLoadAssets` walks the manifest's `sounds` / `music` / `textures` / `fonts` / `regions` subtables and registers each. `scriptCall(s, "onStart")` invokes a nullary global Lua function if defined; `scriptCallUpdate` / `scriptCallKeyDown` / `scriptCallKeyUp` / `scriptCallMouseDown` / `scriptCallMouseUp` / `scriptCallMouseMove` / `scriptCallRender` call the corresponding `on_*` hooks. Missing hooks are no-ops. Two-phase `scriptBeginHook`/`scriptEndHook` is exposed for callers that need to push custom argument types. Reusable options-table helpers (`scrOptfieldNum/int/str/color`) for any binding that wants `{ k = v }` style args. The options store auto-loads from `find5.dat` during `scriptInit` (see "Persistence" below).
 - `math.h` — Vec2/Vec3 type definitions. Engine-wide API boundary types.
 
 `main.cpp` defines `conLogf` as a printf wrapper near the top (forward-declared before any module include so headers can call it). This replaces SDLFun's dev-console scrollback — Find5's "console" is just stdout.
@@ -92,18 +92,18 @@ Lua game code reacts to input via callback hooks (transient events) and polling 
 
 **Hooks** — all optional; missing hooks are no-ops:
 - `onUpdate(dt)` — fired every frame before render, `dt` in seconds.
-- `onKeydown(name)` / `onKeyup(name)` — `name` is `SDL_GetKeyName`'s lowercase form (`"space"`, `"escape"`, `"left"`, `"a"`, `"1"`, `"f1"`). Use `print(name)` to discover names empirically.
-- `onMousedown(x, y, button)` / `onMouseup(x, y, button)` — `x, y` in **virtual canvas** coords (center origin, Y-down, ~540 units tall — same coords you draw into with `uiIcon`/`uiText`). Button: 1=left, 2=middle, 3=right, 4=wheel-up, 5=wheel-down.
-- `onMousemove(x, y, dx, dy)` — virtual-canvas coords + deltas. Deltas are scaled from raw SDL pixel deltas (`event.motion.xrel`) by the virtual-canvas ratio so they match the coord space.
+- `onKeyDown(name)` / `onKeyUp(name)` — `name` is `SDL_GetKeyName`'s lowercase form (`"space"`, `"escape"`, `"left"`, `"a"`, `"1"`, `"f1"`). Use `print(name)` to discover names empirically.
+- `onMouseDown(x, y, button)` / `onMouseUp(x, y, button)` — `x, y` in **virtual canvas** coords (center origin, Y-down, ~540 units tall — same coords you draw into with `uiIcon`/`uiText`). Button: 1=left, 2=middle, 3=right, 4=wheel-up, 5=wheel-down.
+- `onMouseMove(x, y, dx, dy)` — virtual-canvas coords + deltas. Deltas are scaled from raw SDL pixel deltas (`event.motion.xrel`) by the virtual-canvas ratio so they match the coord space.
 
 **Polling** (call any time, including from `onUpdate`):
-- `key_down(name)` → bool.
-- `mouse_pos()` → x, y (virtual coords).
-- `mouse_down(button)` → bool.
+- `keyDown(name)` → bool.
+- `mousePos()` → x, y (virtual coords).
+- `mouseDown(button)` → bool.
 
-Esc is hardcoded in `main.cpp` as a quit kill-switch (so a buggy script can't lock the user in). The Lua `onKeydown` still receives `"escape"` so game code can react if it wants.
+Esc is hardcoded in `main.cpp` as a quit kill-switch (so a buggy script can't lock the user in). The Lua `onKeyDown` still receives `"escape"` so game code can react if it wants.
 
-Key-name lookup in `key_down` is a linear scan of `SDLK_FIRST..SDLK_LAST` via `SDL_GetKeyName` (no reverse map in SDL 1.2). It's ~300 strcmps per call — cheap enough for typical games but worth a small cache if a script polls hundreds of keys per frame.
+Key-name lookup in `keyDown` is a linear scan of `SDLK_FIRST..SDLK_LAST` via `SDL_GetKeyName` (no reverse map in SDL 1.2). It's ~300 strcmps per call — cheap enough for typical games but worth a small cache if a script polls hundreds of keys per frame.
 
 ### Rendering from Lua
 
@@ -152,7 +152,7 @@ drawEllipse(cx, cy, rx, ry, {
 })
 ```
 
-**`drawText` align mapping**: the Lua-facing `ALIGN_*` bits differ from `ui.h`'s internal `UI_ALIGN_*` (different historical layout). `scr_draw_text` translates between them, so scripts only ever see one convention. If you add another text-drawing binding later, reuse the same translation.
+**`drawText` align mapping**: the Lua-facing `ALIGN_*` bits differ from `ui.h`'s internal `UI_ALIGN_*` (different historical layout). `scrDrawText` translates between them, so scripts only ever see one convention. If you add another text-drawing binding later, reuse the same translation.
 
 **`drawEllipse` thickness**: implemented via `glLineWidth`. Old Mesa/DRI drivers and very old GPUs may clamp to 1.0 — on a real GeForce 4 MX 440 it works up to ~10. If you need consistently thick strokes across all targets, the next step is to draw quad-strips instead of `GL_LINE_STRIP`.
 
@@ -172,7 +172,7 @@ optSave()                           -- explicit; call after batched changes
 local sound = optGet("sound_on", true)   -- default applies if unset (forward-compat)
 ```
 
-Auto-loaded by `scriptInit` before the entry script runs, so options are ready at `onStart`. `opt_load()` can be called manually to revert to last-saved state. Atomic save via write-to-tmp + rename. The serializer (`opt_writeValue` / `opt_writeTable` in `script.h`) handles nested tables, escapes strings, detects array-shaped tables for compact output, brackets non-identifier and Lua-keyword keys, and caps recursion depth at 16 to avoid cycles. Functions / userdata / threads / mixed-type keys are silently skipped — not persistable.
+Auto-loaded by `scriptInit` before the entry script runs, so options are ready at `onStart`. `optLoad()` can be called manually to revert to last-saved state. Atomic save via write-to-tmp + rename. The serializer (`opt_writeValue` / `opt_writeTable` in `script.h`) handles nested tables, escapes strings, detects array-shaped tables for compact output, brackets non-identifier and Lua-keyword keys, and caps recursion depth at 16 to avoid cycles. Functions / userdata / threads / mixed-type keys are silently skipped — not persistable.
 
 The file format is `return { ... }` and is loaded via `luaL_loadfile` + `lua_pcall` on the C side (bypassing the user-side `dofile` ban). Corruption falls back to empty options with a log message; it never crashes.
 
@@ -190,10 +190,12 @@ Case depends on *where the name sits*, not what it means:
   **CamelCase** — classes.
 
 So one logical name may appear in two casings by role, e.g.
-`local musicOn = optGet("music_on")`. Region IDs are built by string
+`local musicOn = optGet("music_on")`. Compound event names are fully humped
+(`onMouseDown`, `onKeyDown`, `onTextInput`, scene `:mouseDown(x, y, b)`), kept
+in lockstep with the C hook strings. Region IDs are built by string
 (`region = "category_" .. c.id`), so they must stay snake_case. C bindings
-expose a camelCase name (`lua_register(L, "drawText", scr_draw_text)`) while
-the C function keeps its `scr_` name — rename both sides together. Full rule
+expose a camelCase name (`lua_register(L, "drawText", scrDrawText)`) while
+the C wrapper is named `scrCamelCase` — rename both sides together. Full rule
 lives in `../SOOB-Core/CLAUDE.md`.
 
 ## Constraints worth knowing before editing
