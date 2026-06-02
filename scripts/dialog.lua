@@ -59,9 +59,9 @@
 --                   including the animation offset.
 --
 -- Input contract: while isActive(), the host should route
--- handleMousedown / handleMouseup / handleMousemove for every mouse
+-- handleMouseDown / handleMouseUp / handleMouseMove for every mouse
 -- event — buttons need both press AND release to complete a click, and
--- mousemove drives hover. Events outside STATE_OPEN are swallowed (no
+-- mouseMove drives hover. Events outside STATE_OPEN are swallowed (no
 -- input during intro / outro).
 
 local widget = require "engine.widget"
@@ -133,11 +133,11 @@ local function makeQuadWidget(x, y, w, h, color)
         })
     end
     function q:hit()       return false end
-    function q:mousedown() return false end
-    function q:mouseup()   return false end
-    function q:mousemove() end
-    function q:keydown()   return false end
-    function q:keyup()     return false end
+    function q:mouseDown() return false end
+    function q:mouseUp()   return false end
+    function q:mouseMove() end
+    function q:keyDown()   return false end
+    function q:keyUp()     return false end
     return q
 end
 
@@ -412,26 +412,26 @@ local function inputAlive()
     return current and current.state == STATE_OPEN
 end
 
-function M.handleMousedown(x, y, button)
+function M.handleMouseDown(x, y, button)
     if not current then return false end
     if inputAlive() then
-        current.root:mousedown(x, y, button)
+        current.root:mouseDown(x, y, button)
     end
     return true   -- swallow either way
 end
 
-function M.handleMouseup(x, y, button)
+function M.handleMouseUp(x, y, button)
     if not current then return false end
     if inputAlive() then
-        current.root:mouseup(x, y, button)
+        current.root:mouseUp(x, y, button)
     end
     return true
 end
 
-function M.handleMousemove(x, y, dx, dy)
+function M.handleMouseMove(x, y, dx, dy)
     if not current then return false end
     if inputAlive() then
-        current.root:mousemove(x, y, dx, dy)
+        current.root:mouseMove(x, y, dx, dy)
     end
     return true
 end

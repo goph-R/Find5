@@ -378,7 +378,7 @@ end
 
 -- Joker button onClick: if any jokers are left, reveal the next
 -- unfound diff. The press flash comes for free from widget.button's
--- mousedown/mouseup cycle — no timer needed.
+-- mouseDown/mouseUp cycle — no timer needed.
 jokerAction = function()
     if state.jokers > 0 then
         local d = firstUnfound()
@@ -501,7 +501,7 @@ local pauseButton = widget.button{
 }
 -- HUD buttons are mouse-only. Mark non-focusable BEFORE :add so the
 -- panel's auto-focus walk skips them — otherwise pressing Enter or
--- Space during gameplay would fire pause / joker via dispatchKeydown.
+-- Space during gameplay would fire pause / joker via dispatchKeyDown.
 pauseButton.focusable = false
 root:add(pauseButton)
 
@@ -671,28 +671,28 @@ local function gameUpdate(dt)
     root:update(dt)
 end
 
-local function gameMousedown(x, y, button)
+local function gameMouseDown(x, y, button)
     if button ~= 1 then return end
 
     -- An active dialog owns clicks entirely — its button hit-tests run
-    -- inside handleMousedown / handleMouseup, and misses are
+    -- inside handleMouseDown / handleMouseUp, and misses are
     -- swallowed (no fall-through to game logic underneath the modal).
     -- PAUSE / LEVEL_COMPLETE / GAME_OVER / ALL_DONE all route through
     -- here. NB: widget buttons fire onClick on RELEASE, so we also
-    -- need to route mouseup (see gameMouseup) and mousemove (for
+    -- need to route mouseUp (see gameMouseUp) and mouseMove (for
     -- hover feedback while the dialog is up).
     if dialog.isActive() then
-        dialog.handleMousedown(x, y, button)
+        dialog.handleMouseDown(x, y, button)
         return
     end
 
     if state.mode ~= STATE_PLAYING then return end  -- game_over_reveal: input locked
 
     -- Forward to the HUD panel — pause / joker buttons own their own
-    -- hit-tests and fire onClick on mouseup. Pause and joker bbox
+    -- hit-tests and fire onClick on mouseUp. Pause and joker bbox
     -- live entirely outside the portrait area, so a click that lands
     -- on a button never falls through to a portrait hit-test below.
-    root:mousedown(x, y, button)
+    root:mouseDown(x, y, button)
 
     local lx, ly, baseX = clickToPortraitLocal(x, y)
     if not lx then return end
@@ -710,26 +710,26 @@ local function gameMousedown(x, y, button)
     -- soundPlay("wrong")
 end
 
--- Dialog needs mouseup (widget buttons fire on release) and mousemove
+-- Dialog needs mouseUp (widget buttons fire on release) and mouseMove
 -- (button hover) while it's modally active. When no dialog, fan these
 -- straight to the HUD panel so pause / joker hover + release still work
 -- — we'd otherwise lose the scene's auto-forward path by declaring
--- mouseup / mousemove on gameScene at all.
+-- mouseUp / mouseMove on gameScene at all.
 
-local function gameMouseup(x, y, button)
+local function gameMouseUp(x, y, button)
     if dialog.isActive() then
-        dialog.handleMouseup(x, y, button)
+        dialog.handleMouseUp(x, y, button)
         return
     end
-    root:mouseup(x, y, button)
+    root:mouseUp(x, y, button)
 end
 
-local function gameMousemove(x, y, dx, dy)
+local function gameMouseMove(x, y, dx, dy)
     if dialog.isActive() then
-        dialog.handleMousemove(x, y, dx, dy)
+        dialog.handleMouseMove(x, y, dx, dy)
         return
     end
-    root:mousemove(x, y, dx, dy)
+    root:mouseMove(x, y, dx, dy)
 end
 
 -- ---- Render ---------------------------------------------------------------
@@ -814,7 +814,7 @@ end
 
 -- ---- Scene wrapper --------------------------------------------------------
 -- The game runs as one scene; the title screen runs as another. Bodies
--- of gameUpdate / gameMousedown / gameRender are unchanged from when
+-- of gameUpdate / gameMouseDown / gameRender are unchanged from when
 -- they were top-level on_* hooks — only the dispatch path changed.
 
 local gameScene = { root = root }
@@ -827,9 +827,9 @@ function gameScene:enter()
 end
 
 function gameScene:update(dt)     gameUpdate(dt)         end
-function gameScene:mousedown(x, y, b) gameMousedown(x, y, b) end
-function gameScene:mouseup(x, y, b)   gameMouseup(x, y, b)   end
-function gameScene:mousemove(x, y, dx, dy) gameMousemove(x, y, dx, dy) end
+function gameScene:mouseDown(x, y, b) gameMouseDown(x, y, b) end
+function gameScene:mouseUp(x, y, b)   gameMouseUp(x, y, b)   end
+function gameScene:mouseMove(x, y, dx, dy) gameMouseMove(x, y, dx, dy) end
 function gameScene:render()        gameRender()           end
 
 -- Clean up the dialog state when leaving the game scene. The Yes /
