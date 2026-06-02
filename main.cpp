@@ -3,7 +3,7 @@
  * Forked from SDLFun with all 3D / FPS / physics / model-loading code
  * stripped. What's left: SDL 1.2, OpenGL (fixed-function, 2D ortho),
  * OpenAL (sound effects + streaming OGG music), Lua 5.1 (asset manifest
- * + on_start hook), stb_image (PNG loader).
+ * + onStart hook), stb_image (PNG loader).
  *
  * Target span — same as SDLFun: from Windows 98 / Dev-C++ MinGW 3.4 up
  * through modern Linux & Win10. No C++11. No shaders.
@@ -197,8 +197,8 @@ int main(int argc, char *argv[])
     scriptLoadAssets(&script, "assets.lua");
     scriptInstallConsolePrint(&script);
 
-    /* Run the entry script, then fire on_start. Scripts can call
-       music_play, snd_play, ui_show_message at this point. */
+    /* Run the entry script, then fire onStart. Scripts can call
+       musicPlay, soundPlay, uiShowMessage at this point. */
     scriptRunFile(&script, "scripts/main.lua");
     scriptCall(&script, "onStart");
 
@@ -225,10 +225,10 @@ int main(int argc, char *argv[])
                 if (sym == SDLK_ESCAPE) running = 0;
                 const char *name = SDL_GetKeyName(sym);
                 scriptCallKeyDown(&script, name ? name : "");
-                /* Fire on_textinput after on_keydown when the key
+                /* Fire onTextinput after onKeydown when the key
                    produced a printable ASCII character. Editor widgets
                    handle character insertion here; navigation keys
-                   stay in on_keydown. ASCII only for v1. */
+                   stay in onKeydown. ASCII only for v1. */
                 Uint16 uni = event.key.keysym.unicode;
                 if (uni >= 0x20 && uni <= 0x7E) {
                     char buf[2] = { (char)uni, '\0' };
