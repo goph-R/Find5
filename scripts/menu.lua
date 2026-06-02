@@ -12,8 +12,8 @@
 --   button_up / button_down  : 9-patch, slice {5,36,5,37} of the 41×42 art
 --   button2_up / button2_down: drawn 1:1 at native 90×91 (no slice fields)
 --
--- The scene plugs into engine.scene; main.lua pushes it from on_start
--- and the Start game button calls back into _G.find5_start_game to swap
+-- The scene plugs into engine.scene; main.lua pushes it from onStart
+-- and the Start game button calls back into _G.find5StartGame to swap
 -- this scene for the game scene.
 
 local widget = require "engine.widget"
@@ -56,7 +56,7 @@ local CRED_BTN_X   =    5
 
 -- ---- Scene state ----------------------------------------------------------
 
-local current_cat = 1
+local currentCat = 1
 
 -- Top-level panel at scene origin (0,0). Children use scene-space coords
 -- directly — the panel adds zero offset, it just fans events out.
@@ -74,66 +74,66 @@ for i, c in ipairs(LEVELS.categories or {}) do
     }
 end
 
-local function at_first() return current_cat <= 1 end
-local function at_last()  return current_cat >= #categories end
+local function atFirst() return currentCat <= 1 end
+local function atLast()  return currentCat >= #categories end
 
 -- ---- Action handlers ------------------------------------------------------
 
 local rebuild  -- forward decl
 
-local function start_game_action()
-    if _G.find5_start_game then
-        _G.find5_start_game(categories[current_cat].source)
+local function startGameAction()
+    if _G.find5StartGame then
+        _G.find5StartGame(categories[currentCat].source)
     end
 end
 
-local function highscores_action() ui_show_message("Highscores — TODO", 1.2) end
-local function credits_action()    ui_show_message("Credits — TODO",    1.2) end
+local function highscoresAction() uiShowMessage("Highscores — TODO", 1.2) end
+local function creditsAction()    uiShowMessage("Credits — TODO",    1.2) end
 
-local function close_action()
-    if _G.find5_request_quit then _G.find5_request_quit() end
+local function closeAction()
+    if _G.find5RequestQuit then _G.find5RequestQuit() end
 end
 
-local function prev_cat_action()
-    if not at_first() then current_cat = current_cat - 1; rebuild() end
+local function prevCatAction()
+    if not atFirst() then currentCat = currentCat - 1; rebuild() end
 end
-local function next_cat_action()
-    if not at_last()  then current_cat = current_cat + 1; rebuild() end
-end
-
-local function sound_toggle_action()
-    opt_set("sound_on", not opt_get("sound_on", true)); opt_save(); rebuild()
+local function nextCatAction()
+    if not atLast()  then currentCat = currentCat + 1; rebuild() end
 end
 
-local function music_toggle_action()
-    local on = not opt_get("music_on", true)
-    opt_set("music_on", on); opt_save()
-    if on then music_play("title", 0.3, true) else music_stop(0.3) end
+local function soundToggleAction()
+    optSet("sound_on", not optGet("sound_on", true)); optSave(); rebuild()
+end
+
+local function musicToggleAction()
+    local on = not optGet("music_on", true)
+    optSet("music_on", on); optSave()
+    if on then musicPlay("title", 0.3, true) else musicStop(0.3) end
     rebuild()
 end
 
 -- ---- Widget factories ------------------------------------------------------
 
-local function make_text_button(spec)
+local function makeTextButton(spec)
     return widget.button({
         x        = spec.x,        y        = spec.y,
         width    = spec.width,    height   = spec.height or TEXT_BTN_H,
         text     = spec.text,     font     = spec.font,
-        bg_up    = "button_up",   bg_down  = "button_down",
-        bg_hover = "button_hover",
-        on_click = spec.on_click,
+        bgUp    = "button_up",   bgDown  = "button_down",
+        bgHover = "button_hover",
+        onClick = spec.onClick,
     })
 end
 
-local function make_icon_button(spec)
+local function makeIconButton(spec)
     return widget.button({
         x         = spec.x,        y          = spec.y,
         width     = SIDE_BTN_W,    height     = SIDE_BTN_H,
         icon      = spec.icon,
-        icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
-        bg_up     = "button2_up",  bg_down    = "button2_down",
-        bg_hover  = "button2_hover",
-        on_click  = spec.on_click,
+        iconAlign = ALIGN_CENTER + ALIGN_MIDDLE,
+        bgUp     = "button2_up",  bgDown    = "button2_down",
+        bgHover  = "button2_hover",
+        onClick  = spec.onClick,
         disabled  = spec.disabled or false,
     })
 end
@@ -147,15 +147,15 @@ end
 local FOCUS_SLOT_START = 7   -- Start game is children[7] (logo at [1])
 
 rebuild = function()
-    local prev_slot
-    if root.focused_child then
+    local prevSlot
+    if root.focusedChild then
         for i, w in ipairs(root.children) do
-            if w == root.focused_child then prev_slot = i; break end
+            if w == root.focusedChild then prevSlot = i; break end
         end
     end
 
     root.children = {}
-    root.focused_child = nil
+    root.focusedChild = nil
 
     -- 1. Logo (top-center). Non-focusable so the panel skips it for
     -- focus claims; drawn first so it sits behind everything that
@@ -168,68 +168,68 @@ rebuild = function()
     -- 2. Close (top-right). A small button_up 9-patch with the X icon.
     root:add(widget.button({
         x = CLOSE_X, y = CLOSE_Y, width = CLOSE_SIZE, height = CLOSE_SIZE,
-        bg_up = "button_up", bg_down = "button_down",
-        bg_hover = "button_hover",
-        icon = "close_icon", icon_align = ALIGN_CENTER + ALIGN_MIDDLE,
-        on_click = close_action,
+        bgUp = "button_up", bgDown = "button_down",
+        bgHover = "button_hover",
+        icon = "close_icon", iconAlign = ALIGN_CENTER + ALIGN_MIDDLE,
+        onClick = closeAction,
     }))
 
     -- 3-4. Category picker arrows.
-    root:add(make_icon_button({
+    root:add(makeIconButton({
         x = LEFT_BTN_X, y = PICKER_Y_TL,
-        icon = at_first() and "left_disabled_icon" or "left_icon",
-        disabled = at_first(),
-        on_click = prev_cat_action,
+        icon = atFirst() and "left_disabled_icon" or "left_icon",
+        disabled = atFirst(),
+        onClick = prevCatAction,
     }))
-    root:add(make_icon_button({
+    root:add(makeIconButton({
         x = RIGHT_BTN_X, y = PICKER_Y_TL,
-        icon = at_last() and "right_disabled_icon" or "right_icon",
-        disabled = at_last(),
-        on_click = next_cat_action,
+        icon = atLast() and "right_disabled_icon" or "right_icon",
+        disabled = atLast(),
+        onClick = nextCatAction,
     }))
 
     -- 5-6. Audio toggles.
-    root:add(make_icon_button({
+    root:add(makeIconButton({
         x = SOUND_BTN_X, y = TOGGLE_BTN_Y,
-        icon = opt_get("sound_on", true) and "sound_on_icon" or "sound_off_icon",
-        on_click = sound_toggle_action,
+        icon = optGet("sound_on", true) and "sound_on_icon" or "sound_off_icon",
+        onClick = soundToggleAction,
     }))
-    root:add(make_icon_button({
+    root:add(makeIconButton({
         x = MUSIC_BTN_X, y = TOGGLE_BTN_Y,
-        icon = opt_get("music_on", true) and "music_on_icon" or "music_off_icon",
-        on_click = music_toggle_action,
+        icon = optGet("music_on", true) and "music_on_icon" or "music_off_icon",
+        onClick = musicToggleAction,
     }))
 
     -- 7. Start game — primary action, large font, default focus target.
-    root:add(make_text_button({
+    root:add(makeTextButton({
         x = START_BTN_X, y = START_BTN_Y,
         width = START_BTN_W, height = START_BTN_H,
         text = "Start game", font = "large",
-        on_click = start_game_action,
+        onClick = startGameAction,
     }))
 
     -- 8-9. Secondary buttons.
-    root:add(make_text_button({
+    root:add(makeTextButton({
         x = HISC_BTN_X, y = SUB_BTN_Y, width = SUB_BTN_W,
-        text = "Highscores", on_click = highscores_action,
+        text = "Highscores", onClick = highscoresAction,
     }))
-    root:add(make_text_button({
+    root:add(makeTextButton({
         x = CRED_BTN_X, y = SUB_BTN_Y, width = SUB_BTN_W,
-        text = "Credits", on_click = credits_action,
+        text = "Credits", onClick = creditsAction,
     }))
 
     -- Restore focus to the same slot if it's still focusable, otherwise
     -- default to Start game. :add() auto-focused the first focusable
     -- child (the close button); override here.
-    local slot = prev_slot or FOCUS_SLOT_START
+    local slot = prevSlot or FOCUS_SLOT_START
     local target = root.children[slot]
     if not (target and target.focusable and not target.disabled) then
         target = root.children[FOCUS_SLOT_START]
     end
-    if root.focused_child and root.focused_child ~= target then
-        root.focused_child.focused = false
+    if root.focusedChild and root.focusedChild ~= target then
+        root.focusedChild.focused = false
     end
-    root.focused_child = target
+    root.focusedChild = target
     target.focused = true
 end
 
@@ -241,17 +241,17 @@ end
 -- widget tree, render paints the scene-specific bg art and then asks
 -- root to draw the widgets on top.
 
-local menu_scene = { root = root }
+local menuScene = { root = root }
 
-function menu_scene:enter()
+function menuScene:enter()
     rebuild()
-    if opt_get("music_on", true) then
-        music_play("title", 0.5, true)
+    if optGet("music_on", true) then
+        musicPlay("title", 0.5, true)
     end
 
     -- Staggered pop-in: each button fades + scales from 0.7 to 1.0
     -- around its own center, 50 ms apart in declaration order. The
-    -- ease_out_back overshoots a touch and snaps back so the buttons
+    -- easeOutBack overshoots a touch and snaps back so the buttons
     -- have a bit of bounce on arrival.
     for i, child in ipairs(root.children) do
         child.alpha = 0
@@ -259,27 +259,27 @@ function menu_scene:enter()
         child.action = anim.sequence{
             anim.delay(0.05 * (i - 1)),
             anim.parallel{
-                anim.fade_in(0.25),
-                anim.scale_to(1.0, 0.35, anim.ease_out_back),
+                anim.fadeIn(0.25),
+                anim.scaleTo(1.0, 0.35, anim.easeOutBack),
             },
         }
     end
 end
 
-function menu_scene:render()
+function menuScene:render()
     -- Marble backdrop — stretch the 512² texture across the actual visible
     -- canvas (handles aspect ratios other than 4:3 cleanly).
-    local vw, vh = view_size()
-    draw_region("menu_bg", -vw / 2, -vh / 2, {
-        scale_x = vw / 512, scale_y = vh / 512,
+    local vw, vh = viewSize()
+    drawRegion("menu_bg", -vw / 2, -vh / 2, {
+        scaleX = vw / 512, scaleY = vh / 512,
     })
 
     -- Category preview: category image inset 1 px, then frame (over image)
     -- the title caption near the bottom of the frame.
-    draw_region(categories[current_cat].region,
+    drawRegion(categories[currentCat].region,
                 CAT_BOX_X + 1, CAT_BOX_Y + 1)
-    draw_region("category_box", CAT_BOX_X, CAT_BOX_Y)
-    draw_text(categories[current_cat].name,
+    drawRegion("category_box", CAT_BOX_X, CAT_BOX_Y)
+    drawText(categories[currentCat].name,
               CAT_BOX_X + CAT_BOX_W / 2,
               CAT_BOX_Y + CAT_BOX_H - 15, {
         align = ALIGN_CENTER + ALIGN_MIDDLE,
@@ -289,4 +289,4 @@ function menu_scene:render()
     self.root:draw()
 end
 
-return menu_scene
+return menuScene

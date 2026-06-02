@@ -17,8 +17,8 @@ return {
         -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },
     },
 
-    -- Streaming Ogg Vorbis tracks for music_play(name [, fade [, loop]]).
-    -- Files are opened lazily on the first music_play.
+    -- Streaming Ogg Vorbis tracks for musicPlay(name [, fade [, loop]]).
+    -- Files are opened lazily on the first musicPlay.
     music = {
         title   = "assets/music/title.ogg"
     },
@@ -34,7 +34,7 @@ return {
     },
 
     -- Regions are sub-rectangles of textures, addressed by name from
-    -- draw_region(). x, y, w, h are pixels of the source texture (not
+    -- drawRegion(). x, y, w, h are pixels of the source texture (not
     -- normalized). For a full-image region, use 0, 0 and the texture's
     -- natural size. Atlases pack many regions into one texture.
     regions = {

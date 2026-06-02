@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
     /* Run the entry script, then fire on_start. Scripts can call
        music_play, snd_play, ui_show_message at this point. */
     scriptRunFile(&script, "scripts/main.lua");
-    scriptCall(&script, "on_start");
+    scriptCall(&script, "onStart");
 
     int running = 1;
     Uint32 lastTime = SDL_GetTicks();

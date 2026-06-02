@@ -14,7 +14,7 @@
 -- The UI virtual canvas is 480 units tall; virtual width adapts to
 -- the window's aspect ratio. At 16:9 the visible area is wider than
 -- the 640×480 design rect — UI elements stay center-anchored and the
--- background covers the full view (use draw_bg in Lua for the cover
+-- background covers the full view (use drawBg in Lua for the cover
 -- math).
 
 return {

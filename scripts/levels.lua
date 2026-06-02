@@ -8,11 +8,11 @@
 
 return {
     -- Run shape — same across all categories.
-    level_count = 10,             -- levels played per run
-    time_start  = 60.0,           -- seconds budgeted on level 1
-    time_end    = 25.0,           -- seconds budgeted on the last level (linear lerp)
-    diff_count  = 5,              -- diffs per image pair (matches the star slots)
-    joker_max   = 5,              -- jokers per run
+    levelCount = 10,             -- levels played per run
+    timeStart  = 60.0,           -- seconds budgeted on level 1
+    timeEnd    = 25.0,           -- seconds budgeted on the last level (linear lerp)
+    diffCount  = 5,              -- diffs per image pair (matches the star slots)
+    jokerMax   = 5,              -- jokers per run
 
     categories = {
         {
