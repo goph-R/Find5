@@ -463,29 +463,41 @@ end
 
 -- LEVEL column — current / total with "/" between.
 addText(LEVEL_X,      TOP_LABELS_Y,       "LEVEL")
-local levelCurrent = addText(LEVEL_X - 20, TOP_NUMBERS_Y, "1",
-                               { font = "large", color = CURRENT_COLOR })
-local levelTotal   = addText(LEVEL_X + 20, TOP_NUMBERS_Y, "1",
-                               { font = "large", color = TOTAL_COLOR })
-addText(LEVEL_X,      TOP_SLASH_LABELS_Y, "/")
+local levelCurrent = addText(LEVEL_X - 20, TOP_NUMBERS_Y, "1", {
+    font = "large",
+    color = CURRENT_COLOR
+})
+local levelTotal = addText(LEVEL_X + 20, TOP_NUMBERS_Y, "1", {
+    font = "large",
+	color = TOTAL_COLOR
+})
+addText(LEVEL_X, TOP_SLASH_LABELS_Y, "/")
 
 -- FOUND column — current / DIFF_COUNT (total is static).
-addText(FOUND_X,      TOP_LABELS_Y,       "FOUND")
-local foundCurrent = addText(FOUND_X - 20, TOP_NUMBERS_Y, "0",
-                               { font = "large", color = CURRENT_COLOR })
-addText(FOUND_X + 20, TOP_NUMBERS_Y,      tostring(DIFF_COUNT),
-         { font = "large", color = TOTAL_COLOR })
-addText(FOUND_X,      TOP_SLASH_LABELS_Y, "/")
+addText(FOUND_X,  TOP_LABELS_Y, "FOUND")
+local foundCurrent = addText(FOUND_X - 20, TOP_NUMBERS_Y, "0", {
+    font = "large",
+	color = CURRENT_COLOR
+})
+addText(FOUND_X + 20, TOP_NUMBERS_Y, tostring(DIFF_COUNT), {
+    font = "large",
+	color = TOTAL_COLOR
+})
+addText(FOUND_X, TOP_SLASH_LABELS_Y, "/")
 
 -- SCORE column — single number, no /total.
 addText(SCORE_X, TOP_LABELS_Y,  "SCORE")
-local scoreLabel  = addText(SCORE_X, TOP_NUMBERS_Y, "0",
-                              { font = "large", color = SCORE_COLOR })
+local scoreLabel  = addText(SCORE_X, TOP_NUMBERS_Y, "0", {
+    font = "large",
+	color = SCORE_COLOR
+})
 
 -- JOKER badge (label above the count, count above the button).
 addText(JOKER_X, JOKER_Y,      "JOKER")
-local jokerCount  = addText(JOKER_X, JOKER_Y + 16, "0",
-                              { font = "large", color = CURRENT_COLOR })
+local jokerCount  = addText(JOKER_X, JOKER_Y + 16, "0", {
+    font = "large",
+	color = CURRENT_COLOR
+})
 
 -- Layer 5: buttons. pause (top-right) and joker (center-bottom). Both
 -- use the standard button trio (button_up / button_down / button_hover)
