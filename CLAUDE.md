@@ -190,9 +190,11 @@ Case depends on *where the name sits*, not what it means:
   **CamelCase** — classes.
 
 So one logical name may appear in two casings by role, e.g.
-`local musicOn = optGet("music_on")`. Compound event names are fully humped
-(`onMouseDown`, `onKeyDown`, `onTextInput`, scene `:mouseDown(x, y, b)`), kept
-in lockstep with the C hook strings. Region IDs are built by string
+`local musicOn = optGet("music_on")`. Event hooks are `on` + CamelCase event,
+single- or multi-word alike (`onUpdate`, `onRender`, `onMouseDown`,
+`onKeyDown`, `onTextInput`); scene methods drop the `on` (`:update(dt)`,
+`:mouseDown(x, y, b)`, `:keyDown(name)`), kept in lockstep with the C hook
+strings. Region IDs are built by string
 (`region = "category_" .. c.id`), so they must stay snake_case. C bindings
 expose a camelCase name (`lua_register(L, "drawText", scrDrawText)`) while
 the C wrapper is named `scrCamelCase` — rename both sides together. Full rule
