@@ -37,6 +37,34 @@ local FIND_POINTS            = 100   -- per-diff bonus on find (click or joker)
 local SCORE_COUNT_DURATION   = 1.5   -- level-end bonus count-up
 local SCORE_POPUP_DURATION   = 0.9   -- "+N" float-and-fade
 local SCORE_POPUP_RISE       = 30    -- virtual px the "+N" floats upward
+local JOKER_BONUS_PER        = 200   -- COMPLETED dialog: per-level bonus per joker still held
+
+-- COMPLETED dialog — per-row reveal + count-up timing. Each bonus row
+-- pops in (scale 2.0→1.0, alpha 0→1) over REVEAL, then its yellow number
+-- counts up at a CONSTANT rate (linear, COUNT_RATE points/sec) so every
+-- row ticks at the same readable speed — the count's length scales with
+-- the value (clamped), not a fixed window. Rows run sequentially: each
+-- one's reveal+count+GAP schedule is precomputed in enterLevelComplete.
+-- The TOTAL row is shown in full (white) from the start.
+local SUMMARY_REVEAL_DUR     = 0.28   -- per row: scale 2.0→1.0, alpha 0→1
+local SUMMARY_ROW_GAP        = 0.12   -- pause between consecutive rows
+local SUMMARY_COUNT_RATE     = 800    -- points per second (constant count speed)
+local SUMMARY_COUNT_MIN      = 0.30   -- s — floor so tiny bonuses still read
+local SUMMARY_COUNT_MAX      = 1.60   -- s — ceiling so big bonuses don't drag
+
+-- COMPLETED dialog — layout (offsets from the dialog's animated center).
+-- Tune these on the dev box; there's no headless visual check.
+local SUMMARY_TOP_DY         = -60   -- y of the first (Time) row
+local SUMMARY_ROW_DY         =  38   -- vertical step between rows (TOTAL is row 4)
+local SUMMARY_ROW_W          = 360   -- width of the 0.6-black row quad
+local SUMMARY_ROW_H          =  34   -- height of the row quad
+local SUMMARY_LABEL_RX       =   0   -- right edge of the right-aligned label
+local SUMMARY_NUM_LX         =  18   -- left edge of the left-aligned number
+local SUMMARY_LABEL_COLOR    = { 0.62, 0.70, 0.82 }  -- bluish gray, small font
+local SUMMARY_NUM_COLOR      = { 1.0, 0.86, 0.2 }    -- yellow, large font
+local SUMMARY_WHITE          = { 1.0, 1.0, 1.0 }
+
+local function summaryEase(p) local u = 1 - p; return 1 - u * u end
 
 -- ---- State ----------------------------------------------------------------
 local state = {
@@ -54,7 +82,9 @@ local state = {
     revealT     = 0,                   -- secs in GAME_OVER_REVEAL
     waitT       = 0,                   -- secs in LEVEL_COMPLETE_WAIT
     scorePopups = {},                  -- floating "+N" texts: { x, y, value, t }
-    scoreAnim   = nil,                 -- level-end count-up: { from, to, t }
+    scoreAnim   = nil,                 -- session-end count-up: { from, to, t }
+    summary     = nil,                 -- COMPLETED breakdown: { rows, total, buttonsShown }
+    pendingAdvance = false,            -- set by continueToNextLevel; consumed in gameScene:enter
 }
 
 -- ---- Layout (virtual canvas: UI_VIRTUAL_H = 480, center origin, Y-down) ----
@@ -174,6 +204,10 @@ local newRun
 -- the helpers they each use are defined).
 local enterPaused, jokerAction
 
+-- Forward-declared so continueToNextLevel can hand it to scene.replace for
+-- the through-black "next level" fade; the table is assigned at the bottom.
+local gameScene
+
 local function enterAllDone()
     state.mode = STATE_ALL_DONE
     -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
@@ -240,13 +274,14 @@ end
 
 -- Continue past LEVEL_COMPLETE. Wraps to STATE_ALL_DONE after the final
 -- level; otherwise advances and resets.
+-- "Next level >" → fade through black, advance at the black midpoint
+-- (hidden), then fade back in. The advance itself runs in gameScene:enter,
+-- which fires at the fade's swap point, gated by pendingAdvance. The dialog
+-- button uses skipOutro so it stays put while the fade covers it (same
+-- pattern as the Exit-to-main-menu confirm).
 local function continueToNextLevel()
-    settleScoreAnim()
-    if state.level >= LEVELS.levelCount then
-        enterAllDone()
-    else
-        startLevel(state.level + 1)
-    end
+    state.pendingAdvance = true
+    scene.replace(gameScene, transition.fadeThroughBlack(0.6))
 end
 
 -- Reset back to level 1 fresh. Used by GAME_OVER → retry and ALL_DONE → play
@@ -257,42 +292,155 @@ newRun = function()
     startLevel(1)
 end
 
+-- One breakdown row: a 0.6-black quad, a right-aligned label and a
+-- left-aligned number, all scaled by `scale` and faded by `alpha`. The
+-- quad scales about the row center so the whole row pops as a unit; the
+-- label / number scale about their own align anchors.
+local function drawSummaryRow(label, numText, rowY, ax,
+                              labelColor, numColor, numFont, scale, alpha)
+    local qw, qh = SUMMARY_ROW_W * scale, SUMMARY_ROW_H * scale
+    drawQuad(ax - qw * 0.5, rowY - qh * 0.5, qw, qh,
+             { color = { 0, 0, 0, 0.6 * alpha } })
+    drawText(label, ax + SUMMARY_LABEL_RX, rowY, {
+        align = ALIGN_RIGHT + ALIGN_MIDDLE,
+        scale = scale,
+        color = { labelColor[1], labelColor[2], labelColor[3], alpha },
+    })
+    drawText(numText, ax + SUMMARY_NUM_LX, rowY, {
+        align = ALIGN_LEFT + ALIGN_MIDDLE,
+        font  = numFont,
+        scale = scale,
+        color = { numColor[1], numColor[2], numColor[3], alpha },
+    })
+end
+
+-- COMPLETED dialog body. TOTAL is drawn in full from frame one (the
+-- breakdown that follows "adds up" to it). The three bonus rows pop in
+-- and count up one after another; once the last finishes, the deferred
+-- "Next level >" button is revealed. `t` is seconds since the dialog
+-- settled (the host passes 0 while the drop-in bounce plays).
+local function drawSummaryBody(introDone, t, ax, ay)
+    local sm = state.summary
+    if not sm or not introDone then return end
+
+    local totalY = ay + SUMMARY_TOP_DY + 3 * SUMMARY_ROW_DY
+
+    -- Once the count-up has finished we latch `done` and render everything
+    -- at full, stopping all row animation. This also covers the dialog's
+    -- slide-out: M.close resets the body clock (t → 0), and without this
+    -- the rows would replay their pop-in + count on the way out.
+    if sm.done then
+        for i, row in ipairs(sm.rows) do
+            local rowY = ay + SUMMARY_TOP_DY + (i - 1) * SUMMARY_ROW_DY
+            drawSummaryRow(row.label, tostring(row.value), rowY, ax,
+                           SUMMARY_LABEL_COLOR, SUMMARY_NUM_COLOR, "large", 1.0, 1.0)
+        end
+        drawSummaryRow("TOTAL:", tostring(sm.total), totalY, ax,
+                       SUMMARY_WHITE, SUMMARY_WHITE, "large", 1.0, 1.0)
+        return
+    end
+
+    -- Time / Joker / Found — staggered reveal (scale 2→1, alpha 0→1) then
+    -- count-up. TOTAL counts in lockstep, showing the running sum of what
+    -- the rows have counted so far (so each row's count "adds" into it).
+    local runningTotal = 0
+    local allDone = true
+    for i, row in ipairs(sm.rows) do
+        local rt = t - row.startT
+        if rt <= 0 then
+            allDone = false
+        else
+            local revealF = math.min(rt / SUMMARY_REVEAL_DUR, 1.0)
+            local e       = summaryEase(revealF)
+            local scale   = 2.0 + (1.0 - 2.0) * e   -- 2.0 → 1.0
+            -- Linear count at the constant rate: countDur was sized from
+            -- the value, so every row's number advances at the same speed.
+            local countF  = (rt - SUMMARY_REVEAL_DUR) / row.countDur
+            -- Not finished until the count completes — this includes the
+            -- reveal phase (countF < 0), which must NOT count as done, or
+            -- the last row latches `done` and snaps to its value the
+            -- instant it appears instead of counting.
+            if countF < 1 then allDone = false end
+            if countF < 0 then countF = 0 elseif countF > 1 then countF = 1 end
+            local shown  = math.floor(row.value * countF)
+            runningTotal = runningTotal + shown
+            local rowY   = ay + SUMMARY_TOP_DY + (i - 1) * SUMMARY_ROW_DY
+            drawSummaryRow(row.label, tostring(shown), rowY, ax,
+                           SUMMARY_LABEL_COLOR, SUMMARY_NUM_COLOR, "large",
+                           scale, e)
+        end
+    end
+
+    -- TOTAL row: always full alpha/scale (white); number is the running sum.
+    drawSummaryRow("TOTAL:", tostring(runningTotal), totalY, ax,
+                   SUMMARY_WHITE, SUMMARY_WHITE, "large", 1.0, 1.0)
+
+    -- All three rows have finished counting — latch done + reveal the button.
+    if allDone then
+        sm.done = true
+        if not sm.buttonsShown then
+            sm.buttonsShown = true
+            dialog.revealButtons()
+        end
+    end
+end
+
 local function enterLevelComplete()
     state.mode = STATE_LEVEL_COMPLETE
-    -- Only time bonus per level; joker bonus is held until session end
-    -- (see enterAllDone). Avoids paying out unused jokers every level.
-    local timeBonus = math.floor(state.timeLeft * 10)
-    state.timeBonus = timeBonus    -- snapshot for the dialog body
-    state.scoreAnim = {
-        from = state.score, to = state.score + timeBonus, t = 0,
+
+    -- Per-level payout, broken out in the dialog and summed into TOTAL:
+    --   Time  — leftover time × 10
+    --   Joker — JOKER_BONUS_PER per joker still held
+    --   Found — FIND_POINTS per NON-joker find (joker reveals don't earn it)
+    local timeBonus  = math.floor(state.timeLeft * 10)
+    local jokerBonus = state.jokers * JOKER_BONUS_PER
+    local foundCount = 0
+    for _, f in ipairs(state.found) do
+        if not f.joker then foundCount = foundCount + 1 end
+    end
+    local foundBonus = foundCount * FIND_POINTS
+
+    local rows = {
+        { label = "Time bonus:",  value = timeBonus },
+        { label = "Joker bonus:", value = jokerBonus },
+        { label = "Found bonus:", value = foundBonus },
     }
+    -- Sequential schedule: each row reveals, then counts at a constant
+    -- rate (duration = value / RATE, clamped), then a GAP before the next
+    -- starts. startT / countDur are read back in drawSummaryBody so the
+    -- animation is fully data-driven and identical every frame.
+    local startT = 0
+    for _, row in ipairs(rows) do
+        local cd = row.value / SUMMARY_COUNT_RATE
+        if cd < SUMMARY_COUNT_MIN then cd = SUMMARY_COUNT_MIN end
+        if cd > SUMMARY_COUNT_MAX then cd = SUMMARY_COUNT_MAX end
+        row.startT   = startT
+        row.countDur = cd
+        startT = startT + SUMMARY_REVEAL_DUR + cd + SUMMARY_ROW_GAP
+    end
+
+    state.summary = {
+        rows         = rows,
+        total        = timeBonus + jokerBonus + foundBonus,
+        buttonsShown = false,
+        done         = false,
+    }
+    -- TOTAL is committed to state.score in continueToNextLevel, after the
+    -- breakdown has played and the player taps "Next level >".
 
     dialog.show({
-        title = "COMPLETED!",
+        title  = "COMPLETED!",
+        height = 279,                  -- full marble; fits four rows + button
+        buttonsStartHidden = true,     -- button waits for the count-up to finish
         buttons = {
             {
                 x = 0, y = 110, w = 240, h = 56,
-                label  = "Next level >",
-                action = continueToNextLevel,
+                label     = "Next level >",
+                action    = continueToNextLevel,
+                skipOutro = true,   -- dialog stays under the through-black fade
             },
         },
-        drawBody = function(introDone, t, ax, ay)
-            -- Score breakdown. Hidden until the dialog settles so the
-            -- bouncing entrance reads as a unit; once settled the score
-            -- counts up via the existing state.scoreAnim.
-            if not introDone then return end
-            drawText(string.format("Time bonus:  %d", state.timeBonus or 0),
-                      ax, ay - 30, {
-                align = ALIGN_CENTER + ALIGN_MIDDLE,
-                color = { 1.0, 0.95, 0.5 },
-            })
-            drawText(string.format("Total:  %d", state.score),
-                      ax, ay + 30, {
-                align = ALIGN_CENTER + ALIGN_MIDDLE,
-                font  = "large",
-                color = { 1.0, 0.95, 0.2 },
-            })
-        end,
+        drawBody = drawSummaryBody,
     })
 end
 
@@ -376,8 +524,10 @@ local function awardFind(d, byJoker, clickLx, clickLy, baseX)
         x = d.x, y = d.y, w = d.w, h = d.h,
         joker = byJoker, t = 0,
     })
+    -- The "+N" popup stays as live find feedback, but the points are NOT
+    -- added to the score during play — they're paid out at level end as
+    -- the COMPLETED dialog's "Found bonus" (non-joker finds × FIND_POINTS).
     if not byJoker then
-        state.score = state.score + FIND_POINTS
         pushScorePopup(baseX + clickLx, IMG_Y + 1 + clickLy, FIND_POINTS)
     end
 end
@@ -835,13 +985,35 @@ end
 -- of gameUpdate / gameMouseDown / gameRender are unchanged from when
 -- they were top-level on_* hooks — only the dispatch path changed.
 
-local gameScene = { root = root }
+gameScene = { root = root }
 
 function gameScene:enter()
-    -- The currentPair / currentDiffs / state table at the top of this
-    -- file are already initialised to level-1 fresh, so nothing extra to
-    -- do for the first run. A "play again" path through enterAllDone /
-    -- enterGameOver re-uses newRun() which already resets everything.
+    -- First entry (from find5StartGame) needs nothing: newRun already set
+    -- up level 1. Re-entry via the Next-level fade sets pendingAdvance, so
+    -- commit the finished level's bonuses and load the next level HERE — at
+    -- the fade's black midpoint — so the swap is never seen. enterAllDone
+    -- runs instead on the final level (RUN COMPLETE drops in as we fade up).
+    if state.pendingAdvance then
+        state.pendingAdvance = false
+        settleScoreAnim()                   -- flush any pending HUD count-up
+        if state.summary then
+            state.score   = state.score + state.summary.total
+            state.summary = nil
+        end
+        if state.level >= LEVELS.levelCount then
+            enterAllDone()
+        else
+            startLevel(state.level + 1)
+        end
+    end
+    -- Push the reset/new state into the HUD NOW, at the fade's black
+    -- midpoint, so the fade-in reveals empty stars / full timebar / new
+    -- level number already in place. Runs for BOTH "Next level" (the
+    -- advance above) and "Start game" (find5StartGame's newRun resets the
+    -- state before the fade). syncHud otherwise only runs from
+    -- gameScene:update, which is skipped while inTransition — so without
+    -- this the stars would snap away only after the fade-in finished.
+    syncHud()
 end
 
 function gameScene:update(dt)     gameUpdate(dt)         end

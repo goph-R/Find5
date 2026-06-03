@@ -234,6 +234,11 @@ local function buildTree(spec)
     --     can cross-reference each other without an init cycle);
     --   * else → latch `action` into pendingAction and start a normal
     --     close; dlg.onActionDone fires the action once outro lands.
+    -- Collected so M.revealButtons can animate them in later. When
+    -- spec.buttonsStartHidden is set, each button starts visible=false
+    -- (panel skips hidden children for both draw AND hit) until a body
+    -- animation finishes and calls dialog.revealButtons().
+    local buttons = {}
     for _, btn in ipairs(spec.buttons or {}) do
         local bw    = btn.w or 200
         local bh    = btn.h or 48
@@ -272,11 +277,13 @@ local function buildTree(spec)
         -- Dialogs are mouse-driven; pressing Enter / Space anywhere
         -- shouldn't fire arbitrary dialog buttons.
         b.focusable = false
+        if spec.buttonsStartHidden then b.visible = false end
+        buttons[#buttons + 1] = b
         dlg:add(b)
     end
 
     root:add(dlg)
-    return root, dlg, dim
+    return root, dlg, dim, buttons
 end
 
 -- ---- Animation kickoff ---------------------------------------------------
@@ -333,15 +340,16 @@ end
 -- when handing off between dialogs.
 function M.show(spec, opts)
     opts = opts or {}
-    local root, dlg, dim = buildTree(spec)
+    local root, dlg, dim, buttons = buildTree(spec)
     if opts.skipDimFade then dim.alpha = DIM_ALPHA end
     current = {
-        spec  = spec,
-        state = STATE_INTRO,
-        t     = 0,
-        root  = root,
-        dlg   = dlg,
-        dim   = dim,
+        spec    = spec,
+        state   = STATE_INTRO,
+        t       = 0,
+        root    = root,
+        dlg     = dlg,
+        dim     = dim,
+        buttons = buttons,
     }
     startIntro(current, opts.skipDimFade)
     soundPlay(spec.appearSound or "dialog_open")
@@ -379,6 +387,24 @@ function M.dismiss()
     current         = nil
     pendingAction  = nil
     pendingReplace = nil
+end
+
+-- Animate the dialog's buttons in (alpha 0→1, scale 0.7→1.0 with a small
+-- overshoot). For specs built with buttonsStartHidden = true that defer
+-- the button until a body animation finishes — e.g. the COMPLETED dialog
+-- only offers "Next level >" once the score breakdown has counted up.
+-- Idempotent-ish: safe to gate behind a one-shot flag in the caller.
+function M.revealButtons()
+    if not current or not current.buttons then return end
+    for _, b in ipairs(current.buttons) do
+        b.visible = true
+        b.alpha   = 0
+        b.scale   = 0.7
+        b.action  = anim.parallel{
+            anim.fadeIn(0.25),
+            anim.scaleTo(1.0, 0.35, anim.easeOutBack),
+        }
+    end
 end
 
 function M.update(dt)
