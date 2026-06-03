@@ -18,6 +18,7 @@
 
 local widget = require "engine.widget"
 local anim   = require "engine.animation"
+local dialog = require "dialog"
 local LEVELS = require "levels"
 
 -- ---- Layout (virtual canvas: 480 tall, origin center, Y-down) -------------
@@ -90,8 +91,34 @@ end
 local function highscoresAction() uiShowMessage("Highscores — TODO", 1.2) end
 local function creditsAction()    uiShowMessage("Credits — TODO",    1.2) end
 
-local function closeAction()
+-- Quit the whole app. Fired AFTER the confirm dialog's outro (the
+-- normal action path) — no scene fade is taking over here, unlike the
+-- in-game "Exit to main menu" dialog, so we let the dialog play its
+-- outro cleanly and quit on completion (no skipOutro).
+local function quitAction()
     if _G.find5RequestQuit then _G.find5RequestQuit() end
+end
+
+-- Modeled on main.lua's confirmExitSpecFn (same height / button
+-- geometry). The menu has no pause screen to fall back to, so "No"
+-- carries neither `replace` nor `action`: clicking it just runs the
+-- normal close, dropping back to the live menu underneath.
+local function confirmExitSpecFn()
+    return {
+        title = "Exit to system?",
+        height = 170,
+        buttons = {
+            { x = -60, y = 25, w = 100, h = 56,
+              label = "No" },
+            { x =  60, y = 25, w = 100, h = 56,
+              label = "Yes",
+              action = quitAction },
+        },
+    }
+end
+
+local function closeAction()
+    dialog.show(confirmExitSpecFn())
 end
 
 local function prevCatAction()
@@ -243,6 +270,31 @@ end
 
 local menuScene = { root = root }
 
+-- The exit-confirm dialog is modal: while it's active it owns every
+-- mouse event (its button hit-tests run inside the handle* calls and
+-- misses are swallowed, so clicks never fall through to the menu
+-- widgets underneath). When idle, events fan out to the widget tree as
+-- before. Mirrors the game scene's dialog plumbing in main.lua.
+function menuScene:update(dt)
+    root:update(dt)
+    dialog.update(dt)
+end
+
+function menuScene:mouseDown(x, y, button)
+    if dialog.isActive() then dialog.handleMouseDown(x, y, button); return end
+    root:mouseDown(x, y, button)
+end
+
+function menuScene:mouseUp(x, y, button)
+    if dialog.isActive() then dialog.handleMouseUp(x, y, button); return end
+    root:mouseUp(x, y, button)
+end
+
+function menuScene:mouseMove(x, y, dx, dy)
+    if dialog.isActive() then dialog.handleMouseMove(x, y, dx, dy); return end
+    root:mouseMove(x, y, dx, dy)
+end
+
 function menuScene:enter()
     rebuild()
     if optGet("music_on", true) then
@@ -287,6 +339,10 @@ function menuScene:render()
     })
 
     self.root:draw()
+
+    -- Dialog renders last so the modal (dim + panel) sits above the
+    -- whole title screen, including the direct drawRegion bg/category art.
+    dialog.render()
 end
 
 return menuScene

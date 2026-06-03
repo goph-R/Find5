@@ -320,11 +320,14 @@ local pauseSpecFn, confirmExitSpecFn
 pauseSpecFn = function()
     return {
         title = "PAUSED",
+        height = 230,		
         buttons = {
-            { x = 0, y =  45, w = 240, h = 56,
-              label = "Resume",            action = resumePlaying },
-            { x = 0, y = 110, w = 240, h = 56,
-              label = "Exit to main menu", replace = confirmExitSpecFn },
+            { x = 0, y = -10, w = 240, h = 56,
+              label = "Resume", 
+			  action = resumePlaying },
+            { x = 0, y = 55, w = 240, h = 56,
+              label = "Exit to main menu",
+			  replace = confirmExitSpecFn },
         },
     }
 end
@@ -332,15 +335,18 @@ end
 confirmExitSpecFn = function()
     return {
         title = "Exit to main menu?",
+		height = 170,
         buttons = {
-            { x = -60, y = 110, w = 100, h = 56,
-              label = "No",  replace = pauseSpecFn },
+            { x = -60, y = 25, w = 100, h = 56,
+              label = "No",
+			  replace = pauseSpecFn },
             -- skipOutro so the dialog doesn't slide+fade FIRST and
             -- THEN the scene fade-to-black starts. The dialog stays
             -- at rest visually while the overlay grows over it; the
             -- game scene's :exit dismisses the dialog state at swap.
-            { x =  60, y = 110, w = 100, h = 56,
-              label = "Yes", action = exitToMainMenu,
+            { x =  60, y = 25, w = 100, h = 56,
+              label = "Yes",
+			  action = exitToMainMenu,
               skipOutro = true },
         },
     }
@@ -486,14 +492,14 @@ addText(FOUND_X + 20, TOP_NUMBERS_Y, tostring(DIFF_COUNT), {
 addText(FOUND_X, TOP_SLASH_LABELS_Y, "/")
 
 -- SCORE column — single number, no /total.
-addText(SCORE_X, TOP_LABELS_Y,  "SCORE")
+addText(SCORE_X, TOP_LABELS_Y, "SCORE")
 local scoreLabel  = addText(SCORE_X, TOP_NUMBERS_Y, "0", {
     font = "large",
 	color = SCORE_COLOR
 })
 
 -- JOKER badge (label above the count, count above the button).
-addText(JOKER_X, JOKER_Y,      "JOKER")
+addText(JOKER_X, JOKER_Y, "JOKER")
 local jokerCount  = addText(JOKER_X, JOKER_Y + 16, "0", {
     font = "large",
 	color = CURRENT_COLOR
@@ -507,7 +513,7 @@ local pauseButton = widget.button{
     bgUp      = "button_up",
     bgDown    = "button_down",
     bgHover   = "button_hover",
-    icon       = "pause_icon",
+    icon      = "pause_icon",
     iconAlign = ALIGN_CENTER + ALIGN_MIDDLE,
     onClick   = function() enterPaused() end,
 }
@@ -522,7 +528,7 @@ local jokerButton = widget.button{
     bgUp      = "button_up",
     bgDown    = "button_down",
     bgHover   = "button_hover",
-    icon       = "joker_icon",
+    icon      = "joker_icon",
     iconAlign = ALIGN_CENTER + ALIGN_MIDDLE,
     onClick   = function() jokerAction() end,
 }
@@ -868,11 +874,11 @@ function _G.find5StartGame(category)
     scene.replace(gameScene, transition.fadeThroughBlack(0.6))
 end
 
--- Menu's close button signals quit. SDL has no Lua-side quit binding, so
--- we use a flag the engine polls each frame; the simplest portable shim
--- is to push an SDL_QUIT via a future binding. For the draft we just log.
+-- Menu's close button signals quit. requestQuit() (SOOB-Core binding)
+-- sets a flag the host loop polls after each update, then runs the
+-- normal shutdown path — a graceful exit, not an abort.
 function _G.find5RequestQuit()
-    uiShowMessage("Press Esc to quit (Lua quit binding: TODO)", 2.0)
+    requestQuit()
 end
 
 -- Wire the on_* engine hooks to scene dispatchers. onStart stays

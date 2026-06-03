@@ -262,6 +262,10 @@ int main(int argc, char *argv[])
         }
 
         scriptCallUpdate(&script, dt);
+        /* A script (e.g. the menu's "Exit to system?" dialog) can ask to
+           quit via requestQuit(); honor it after the frame's update so
+           any dialog outro / action that set it has already run. */
+        if (script.quitRequested) running = 0;
         musicUpdate(&mus, dt);
         uiUpdateMessage(&ui, dt);
 
