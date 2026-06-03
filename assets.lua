@@ -11,7 +11,7 @@
 
 return {
     sounds = {
-        jump = "assets/sounds/jump.wav",
+		placholder  = "assets/sounds/placeholder.wav",
         -- Random-pick groups: name = { "path1", "path2", ... } picks a
         -- uniformly-random non-repeating variant each call.
         -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },
@@ -20,7 +20,7 @@ return {
     -- Streaming Ogg Vorbis tracks for musicPlay(name [, fade [, loop]]).
     -- Files are opened lazily on the first musicPlay.
     music = {
-        title   = "assets/music/title.ogg"
+        title = "assets/music/title.ogg"
     },
 
     textures = {
@@ -29,6 +29,7 @@ return {
         game_ui    = "assets/textures/game_ui.png",
 		dialog_bg  = "assets/textures/dialog_bg.png",
 		categories = "assets/textures/categories.png",
+		numbers    = "assets/textures/numbers.png",
         image_1a   = "assets/textures/image_1a.png",
         image_1b   = "assets/textures/image_1b.png",
     },
@@ -75,6 +76,10 @@ return {
         timebar    = { tex = "game_ui", x = 1, y = 44, w = 264, h = 22 },
         timebar_bg = { tex = "game_ui", x = 1, y = 67, w = 266, h = 24 },
         image_bg   = { tex = "game_ui", x = 1, y = 92, w = 287, h = 417 },
+		
+		number_1 = { tex = "numbers", x =   0, y = 0, w = 111, h = 185 },
+		number_2 = { tex = "numbers", x = 110, y = 0, w = 152, h = 185 },
+		number_3 = { tex = "numbers", x = 261, y = 0, w = 151, h = 185 },
 		
         image_1a  = { tex = "image_1a", x = 0, y = 0, w = 285, h = 415 },
         image_1b  = { tex = "image_1b", x = 0, y = 0, w = 285, h = 415 },

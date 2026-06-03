@@ -8,6 +8,7 @@ local LEVELS     = require "levels"
 local dialog     = require "dialog"
 local scene      = require "engine.scene"
 local transition = require "engine.transition"
+local anim       = require "engine.animation"
 
 -- Pick a single image pair to play for now. Multi-image / multi-category
 -- rotation lands with the title screen.
@@ -15,6 +16,7 @@ local currentPair  = LEVELS.categories[1].images[1]
 local currentDiffs = currentPair.diffs
 
 -- ---- State-machine modes ----
+local STATE_COUNTDOWN             = "countdown"
 local STATE_PLAYING               = "playing"
 local STATE_PAUSED                = "paused"
 local STATE_LEVEL_COMPLETE_WAIT   = "level_complete_wait"
@@ -66,6 +68,25 @@ local SUMMARY_WHITE          = { 1.0, 1.0, 1.0 }
 
 local function summaryEase(p) local u = 1 - p; return 1 - u * u end
 
+-- ---- Pre-level countdown --------------------------------------------------
+-- A dialog-style dim with the 3 / 2 / 1 number regions in the center. Each
+-- number animates over COUNTDOWN_NUM_DUR: scale 2 / alpha 0 → scale 1 /
+-- alpha 1 at the midpoint → scale 0 / alpha 0, anim.easeInOutExpo on each
+-- half. The next number starts when the current hits its midpoint, so they
+-- stagger by half the duration and two can overlap on screen. Built as a
+-- little set of anim-driven widgets in buildCountdown (below the state
+-- table, since it sets state.mode on completion).
+local COUNTDOWN_NUM_DUR   = 2.0
+local COUNTDOWN_DIM_ALPHA = 0.88   -- matches the dialog dim
+local COUNTDOWN_NUMBERS = {
+    { region = "number_3", sound = "count_three" },
+    { region = "number_2", sound = "count_two"   },
+    { region = "number_1", sound = "count_one"   },
+}
+-- Voice IDs must be registered under `sounds` in assets.lua; soundPlay
+-- no-ops (logs) until they exist.
+local COUNTDOWN_GO_SOUND  = "count_go"
+
 -- ---- State ----------------------------------------------------------------
 local state = {
     level        = 1,
@@ -85,6 +106,7 @@ local state = {
     scoreAnim   = nil,                 -- session-end count-up: { from, to, t }
     summary     = nil,                 -- COMPLETED breakdown: { rows, total, buttonsShown }
     pendingAdvance = false,            -- set by continueToNextLevel; consumed in gameScene:enter
+    countdown   = nil,                 -- pre-level 3/2/1 overlay: list of anim widgets
 }
 
 -- ---- Layout (virtual canvas: UI_VIRTUAL_H = 480, center origin, Y-down) ----
@@ -164,6 +186,69 @@ end
 
 -- Time budget for level `n` lerped linearly from LEVELS.timeStart at level 1
 -- to LEVELS.timeEnd at levelCount. Single-level runs just use timeStart.
+-- Build the countdown as a small set of anim-driven widgets (plain tables
+-- the anim ticker tweens). Returned as a draw/tick list: a dim quad plus one
+-- number per COUNTDOWN_NUMBERS. Each number's action delays to its start,
+-- pops in (scale 2→1, alpha 0→1), shouts at the midpoint, then vanishes
+-- (1→0). The dim holds full, then releases over the last number's vanish.
+-- The last number's onActionDone shouts "go" and unlocks gameplay.
+local function buildCountdown()
+    local half        = COUNTDOWN_NUM_DUR * 0.5
+    local lastStart   = (#COUNTDOWN_NUMBERS - 1) * half   -- number_1's delay
+    local widgets     = {}
+
+    -- Dim: full from frame one (so the through-black fade-in lands already
+    -- dimmed), then released in step with number_1's vanish.
+    widgets[1] = {
+        alpha  = COUNTDOWN_DIM_ALPHA,
+        action = anim.sequence{
+            anim.delay(lastStart + half),     -- hold until number_1 starts vanishing
+            anim.fadeTo(0.0, half),           -- linear release as the game opens up
+        },
+        draw = function(self)
+            if self.alpha <= 0 then return end
+            local vw, vh = viewSize()
+            drawQuad(-vw * 0.5, -vh * 0.5, vw, vh, { color = { 0, 0, 0, self.alpha } })
+        end,
+    }
+
+    for i, n in ipairs(COUNTDOWN_NUMBERS) do
+        local w = {
+            region = n.region, scale = 2.0, alpha = 0.0,
+            action = anim.sequence{
+                anim.delay((i - 1) * half),
+                anim.parallel{                                       -- appear: 2→1, 0→1
+                    anim.scaleTo(1.0, half, anim.easeInOutExpo),
+                    anim.fadeTo (1.0, half, anim.easeInOutExpo),
+                },
+                anim.call(function() soundPlay(n.sound) end),        -- shout at the midpoint
+                anim.parallel{                                       -- vanish: 1→0, 1→0
+                    anim.scaleTo(0.0, half, anim.easeInOutExpo),
+                    anim.fadeTo (0.0, half, anim.easeInOutExpo),
+                },
+            },
+            draw = function(self)
+                if self.alpha <= 0 then return end
+                drawRegion(self.region, 0, 0, {
+                    align = ALIGN_CENTER + ALIGN_MIDDLE,
+                    scale = self.scale, alpha = self.alpha,
+                })
+            end,
+        }
+        -- Last number to finish ends the countdown: "go", release, unlock.
+        if i == #COUNTDOWN_NUMBERS then
+            w.onActionDone = function()
+                soundPlay(COUNTDOWN_GO_SOUND)
+                state.countdown = nil
+                state.mode      = STATE_PLAYING
+            end
+        end
+        widgets[#widgets + 1] = w
+    end
+
+    return widgets
+end
+
 local function levelTimeBudget(n)
     if LEVELS.levelCount <= 1 then return LEVELS.timeStart end
     local f = (n - 1) / (LEVELS.levelCount - 1)
@@ -184,7 +269,10 @@ local function startLevel(n)
     state.waitT       = 0
     state.scorePopups = {}
     state.scoreAnim   = nil
-    state.mode         = STATE_PLAYING
+    -- Open with the 3/2/1 countdown; gameplay (timer + clicks) unlocks when
+    -- it finishes and buildCountdown's last number flips the mode to PLAYING.
+    state.countdown   = buildCountdown()
+    state.mode         = STATE_COUNTDOWN
 end
 
 local function settleScoreAnim()
@@ -556,7 +644,6 @@ end
 -- changes every tick and doesn't map onto stable widget fields.
 
 local widget = require "engine.widget"
-local anim   = require "engine.animation"
 
 local root = widget.panel({ x = 0, y = 0 })
 
@@ -827,6 +914,14 @@ local function gameUpdate(dt)
         if state.revealT >= need then
             enterGameOver()
         end
+
+    elseif state.mode == STATE_COUNTDOWN then
+        -- Tick each countdown widget's action (anim drives the scale/alpha
+        -- tweens, the shout calls, and — on the last number — the flip to
+        -- PLAYING). Capture the list locally since that flip nils
+        -- state.countdown mid-loop.
+        local cd = state.countdown
+        for _, w in ipairs(cd) do anim.tickAction(w, dt) end
     end
 
     -- Push the latest game state into the HUD widgets so they render
@@ -901,6 +996,15 @@ local function gameMouseMove(x, y, dx, dy)
 end
 
 -- ---- Render ---------------------------------------------------------------
+
+-- Pre-level countdown overlay: a dialog-style dim plus the 3/2/1 number
+-- regions, all anim-driven widgets built by buildCountdown. Drawn back to
+-- front (dim first, then numbers) on top of the HUD; no-op when not counting.
+local function drawCountdown()
+    local cd = state.countdown
+    if not cd then return end
+    for _, w in ipairs(cd) do w:draw() end
+end
 
 local function gameRender()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
@@ -978,6 +1082,9 @@ local function gameRender()
     -- Dialog renders last so it sits above everything (HUD, portraits,
     -- diff ellipses). All terminal states are dialogs now.
     dialog.render()
+
+    -- Pre-level countdown sits above the board too (its own dim + numbers).
+    drawCountdown()
 end
 
 -- ---- Scene wrapper --------------------------------------------------------
