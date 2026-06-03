@@ -107,6 +107,7 @@ local state = {
     summary     = nil,                 -- COMPLETED breakdown: { rows, total, buttonsShown }
     pendingAdvance = false,            -- set by continueToNextLevel; consumed in gameScene:enter
     countdown   = nil,                 -- pre-level 3/2/1 overlay: list of anim widgets
+    particles   = {},                  -- transient find-burst sprites (anim widgets)
 }
 
 -- ---- Layout (virtual canvas: UI_VIRTUAL_H = 480, center origin, Y-down) ----
@@ -269,6 +270,7 @@ local function startLevel(n)
     state.waitT       = 0
     state.scorePopups = {}
     state.scoreAnim   = nil
+    state.particles   = {}
     -- Open with the 3/2/1 countdown; gameplay (timer + clicks) unlocks when
     -- it finishes and buildCountdown's last number flips the mode to PLAYING.
     state.countdown   = buildCountdown()
@@ -664,8 +666,8 @@ root:add(timebarFg)
 
 -- Layer 3: stars. Each slot is two widgets — star_bg is always
 -- visible, star (the gold graphic) sits on top and starts invisible
--- (alpha = 0, scale = 1.5). When a diff is found, syncHud kicks off
--- a pop animation on the matching star (scale 1.5 → 1.0, alpha 0 → 1,
+-- (alpha = 0, scale = 2.0). When a diff is found, syncHud kicks off
+-- a pop animation on the matching star (scale 2.0 → 1.0, alpha 0 → 1,
 -- 0.5 s). Two passes: ALL bgs first, then ALL stars on top — so a
 -- popping star scaling out past its own slot doesn't get covered by
 -- the next slot's bg.
@@ -683,7 +685,7 @@ for i = 1, DIFF_COUNT do
     local sx, sy = starPos(i)
     starWidgets[i] = widget.image{
         x = sx, y = sy, region = "star",
-        alpha = 0, scale = 1.5,
+        alpha = 0, scale = 2.0,
     }
     root:add(starWidgets[i])
 end
@@ -782,6 +784,60 @@ local prevFoundCount = 0
 local STAR_FADE_DURATION  = 0.15
 local STAR_SCALE_DURATION = 0.5
 
+-- ---- Find burst -----------------------------------------------------------
+-- When a diff resolves and its HUD star lights up, fling BURST_COUNT little
+-- star sprites out of the star's center. Each: a random start/end scale, a
+-- random duration (so they travel at different speeds and don't all die at
+-- once), a random spin, and a direction confined to its OWN even slice of
+-- the circle (360/COUNT degrees each) with a random angle inside that slice
+-- — so they fan out roughly evenly instead of clumping. Pure visual fluff:
+-- anim-driven widgets on state.particles, ticked + culled in gameUpdate,
+-- drawn in gameRender.
+local BURST_COUNT      = 5
+local BURST_DUR_MIN    = 0.45
+local BURST_DUR_MAX    = 0.85
+local BURST_SCALE0_MIN = 0.1   -- start scale range
+local BURST_SCALE0_MAX = 0.2
+local BURST_SCALE1_MIN = 0.3   -- end scale range
+local BURST_SCALE1_MAX = 0.5
+local BURST_DIST_MIN   = 24
+local BURST_DIST_MAX   = 50
+local BURST_SPIN_MAX   = 2 * math.pi   -- up to ±1 full turn over the life
+
+local function randRange(lo, hi) return lo + math.random() * (hi - lo) end
+
+local function spawnStarBurst(cx, cy)
+    local sector = 2 * math.pi / BURST_COUNT   -- 72° for 5 stars
+    for i = 1, BURST_COUNT do
+        local ang  = (i - 1) * sector + math.random() * sector  -- one per slice
+        local dist = randRange(BURST_DIST_MIN, BURST_DIST_MAX)
+        local dur  = randRange(BURST_DUR_MIN, BURST_DUR_MAX)
+        local sc0  = randRange(BURST_SCALE0_MIN, BURST_SCALE0_MAX)
+        local sc1  = randRange(BURST_SCALE1_MIN, BURST_SCALE1_MAX)
+        local spin = (math.random() * 2 - 1) * BURST_SPIN_MAX
+        local p = {
+            x = cx, y = cy, scale = sc0, rotation = 0, alpha = 1.0,
+            action = anim.parallel{
+                anim.moveBy(math.cos(ang) * dist, math.sin(ang) * dist,
+                            dur, anim.easeOut),
+                anim.scaleTo(sc1, dur, anim.easeOut),
+                anim.rotateBy(spin, dur),
+                anim.fadeTo(0.0, dur),
+            },
+            draw = function(self)
+                if self.alpha <= 0 then return end
+                drawRegion("star", self.x, self.y, {
+                    align    = ALIGN_CENTER + ALIGN_MIDDLE,
+                    scale    = self.scale,
+                    rotation = self.rotation,
+                    alpha    = self.alpha,
+                })
+            end,
+        }
+        state.particles[#state.particles + 1] = p
+    end
+end
+
 -- Per-frame: pull labels / regions / fills / alphas from game state.
 local function syncHud()
     levelCurrent.text = tostring(state.level)
@@ -797,11 +853,14 @@ local function syncHud()
         for i = prevFoundCount + 1, foundCount do
             local s = starWidgets[i]
             s.alpha = 0
-            s.scale = 1.5
+            s.scale = 2.0
             s.action = anim.parallel{
                 anim.fadeTo(1.0, STAR_FADE_DURATION,  anim.easeOut),
                 anim.scaleTo(1.0, STAR_SCALE_DURATION, anim.bounceOut),
             }
+            -- Burst out of the star's center (slot top-left + half size).
+            local sx, sy = starPos(i)
+            spawnStarBurst(sx + STAR_SIZE * 0.5, sy + STAR_SIZE * 0.5)
         end
     elseif foundCount < prevFoundCount then
         -- Reset (level / run restart). Snap every star to its empty
@@ -880,6 +939,14 @@ local function gameUpdate(dt)
         if p.t > SCORE_POPUP_DURATION then
             table.remove(state.scorePopups, i)
         end
+    end
+
+    -- Find-burst particles: tick each anim, cull when its action completes
+    -- (anim.tickAction nils the action). Reverse walk for safe removal.
+    for i = #state.particles, 1, -1 do
+        local p = state.particles[i]
+        anim.tickAction(p, dt)
+        if not p.action then table.remove(state.particles, i) end
     end
 
     if state.mode == STATE_PLAYING then
@@ -1019,6 +1086,9 @@ local function gameRender()
     -- from game state. Paints before the dynamic overlays below so
     -- ellipses and popups land on top of the portraits.
     root:draw()
+
+    -- Find-burst star particles, over the HUD stars they spring from.
+    for _, p in ipairs(state.particles) do p:draw() end
 
     -- ---- Found markers (green / yellow ellipses, mirrored) ----
     local green  = { 0.3, 1.0, 0.4, 1.0 }
