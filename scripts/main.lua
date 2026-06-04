@@ -285,10 +285,11 @@ local function settleScoreAnim()
     end
 end
 
--- Forward-declared so enterAllDone / enterGameOver can capture it as
--- an upvalue for their Retry / Play-again button actions. The body
--- comes further down; everything in between can refer to it.
+-- Forward-declared so enterAllDone / enterGameOver can capture them as
+-- upvalues for their run-end button actions (Play again -> newRun, Back to
+-- main menu -> exitToMainMenu). The bodies come further down.
 local newRun
+local exitToMainMenu
 
 -- Forward decls for the symbols the HUD widgets' onClick closures
 -- need. The actual function bodies are assigned further down (after
@@ -300,10 +301,10 @@ local enterPaused, jokerAction
 local gameScene
 
 -- Run-end button spec. A qualifying final score routes into the name-entry
--- screen (which records it and shows the board); otherwise the button just
--- restarts via newRun. Same geometry whichever branch, so the two terminal
--- dialogs stay visually identical.
-local function endRunButton(finalScore, restartLabel)
+-- screen (which records it and shows the board); otherwise the caller's
+-- `fallback` button spec is used as-is (Play again on a finished run, Back to
+-- main menu on a game over).
+local function endRunButton(finalScore, fallback)
     if scores.qualifies(finalScore) then
         return {
             x = 0, y = 110, w = 240, h = 56,
@@ -315,11 +316,7 @@ local function endRunButton(finalScore, restartLabel)
             end,
         }
     end
-    return {
-        x = 0, y = 110, w = 240, h = 56,
-        label  = restartLabel,
-        action = newRun,
-    }
+    return fallback
 end
 
 local function enterAllDone()
@@ -343,7 +340,10 @@ local function enterAllDone()
     dialog.show({
         title = "RUN COMPLETE!",
         buttons = {
-            endRunButton(finalScore, "Play again"),
+            endRunButton(finalScore, {
+                x = 0, y = 110, w = 240, h = 56,
+                label = "Play again", action = newRun,
+            }),
         },
         drawBody = function(introDone, t, ax, ay)
             if not introDone then return end
@@ -368,7 +368,14 @@ local function enterGameOver()
     dialog.show({
         title = "GAME OVER",
         buttons = {
-            endRunButton(state.score, "Retry"),
+            -- No high score this run: drop back to the title screen. skipOutro
+            -- keeps the dialog at rest while exitToMainMenu's fade-to-black
+            -- overlay grows over it (same pattern as the pause Exit button).
+            endRunButton(state.score, {
+                x = 0, y = 110, w = 300, h = 56,
+                label = "Back to main menu",
+                action = exitToMainMenu, skipOutro = true,
+            }),
         },
         drawBody = function(introDone, t, ax, ay)
             if not introDone then return end
@@ -565,7 +572,7 @@ local function resumePlaying() state.mode = STATE_PLAYING end
 -- player picks "Start game" from the menu, then transition out. Action
 -- fires AFTER the confirm dialog's outro (the normal action path), so
 -- the dim has already faded by the time scene.replace runs.
-local function exitToMainMenu()
+exitToMainMenu = function()
     scene.replace(require("menu"), transition.fadeThroughBlack(0.6))
 end
 
