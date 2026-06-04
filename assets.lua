@@ -11,7 +11,7 @@
 
 return {
     sounds = {
-		placholder  = "assets/sounds/placeholder.wav",
+		placholder  = "assets/sounds/jump.wav",
         -- Random-pick groups: name = { "path1", "path2", ... } picks a
         -- uniformly-random non-repeating variant each call.
         -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },
@@ -78,8 +78,8 @@ return {
         image_bg   = { tex = "game_ui", x = 1, y = 92, w = 287, h = 417 },
 		
 		number_1 = { tex = "numbers", x =   0, y = 0, w = 111, h = 185 },
-		number_2 = { tex = "numbers", x = 110, y = 0, w = 152, h = 185 },
-		number_3 = { tex = "numbers", x = 261, y = 0, w = 151, h = 185 },
+		number_2 = { tex = "numbers", x = 112, y = 0, w = 152, h = 185 },
+		number_3 = { tex = "numbers", x = 265, y = 0, w = 151, h = 185 },
 		
         image_1a  = { tex = "image_1a", x = 0, y = 0, w = 285, h = 415 },
         image_1b  = { tex = "image_1b", x = 0, y = 0, w = 285, h = 415 },
