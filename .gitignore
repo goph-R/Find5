@@ -14,6 +14,7 @@ scripts/engine/
 output.txt
 stdout.txt
 stderr.txt
+ai-on-itself.txt
 
 # Downloaded installers
 ms3d184setup.exe
