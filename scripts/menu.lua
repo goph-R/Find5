@@ -323,12 +323,10 @@ function menuScene:enter()
 end
 
 function menuScene:render()
-    -- Marble backdrop — stretch the 512² texture across the actual visible
-    -- canvas (handles aspect ratios other than 4:3 cleanly).
-    local vw, vh = viewSize()
-    drawRegion("menu_bg", -vw / 2, -vh / 2, {
-        scaleX = vw / 512, scaleY = vh / 512,
-    })
+    -- Marble backdrop — cover-fit the 512² texture to the visible canvas
+    -- (fills while preserving aspect, cropping the overflow), so non-4:3
+    -- windows don't distort it.
+    drawBg("menu_bg")
 
     -- Category preview: category image inset 1 px, then frame (over image)
     -- the title caption near the bottom of the frame.
