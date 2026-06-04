@@ -16,10 +16,12 @@
 -- and the Start game button calls back into _G.find5StartGame to swap
 -- this scene for the game scene.
 
-local widget = require "engine.widget"
-local anim   = require "engine.animation"
-local dialog = require "dialog"
-local LEVELS = require "levels"
+local widget     = require "engine.widget"
+local anim       = require "engine.animation"
+local scene      = require "engine.scene"
+local transition = require "engine.transition"
+local dialog     = require "dialog"
+local LEVELS     = require "levels"
 
 -- ---- Layout (virtual canvas: 480 tall, origin center, Y-down) -------------
 local LOGO_Y       = -232
@@ -88,7 +90,9 @@ local function startGameAction()
     end
 end
 
-local function highscoresAction() uiShowMessage("Highscores — TODO", 1.2) end
+local function highscoresAction()
+    scene.replace(require("highscores"), transition.fadeThroughBlack(0.5))
+end
 local function creditsAction()    uiShowMessage("Credits — TODO",    1.2) end
 
 -- Quit the whole app. Fired AFTER the confirm dialog's outro (the

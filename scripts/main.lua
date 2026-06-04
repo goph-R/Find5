@@ -9,6 +9,7 @@ local dialog     = require "dialog"
 local scene      = require "engine.scene"
 local transition = require "engine.transition"
 local anim       = require "engine.animation"
+local scores     = require "scores"
 
 -- Pick a single image pair to play for now. Multi-image / multi-category
 -- rotation lands with the title screen.
@@ -298,6 +299,29 @@ local enterPaused, jokerAction
 -- the through-black "next level" fade; the table is assigned at the bottom.
 local gameScene
 
+-- Run-end button spec. A qualifying final score routes into the name-entry
+-- screen (which records it and shows the board); otherwise the button just
+-- restarts via newRun. Same geometry whichever branch, so the two terminal
+-- dialogs stay visually identical.
+local function endRunButton(finalScore, restartLabel)
+    if scores.qualifies(finalScore) then
+        return {
+            x = 0, y = 110, w = 240, h = 56,
+            label  = "Continue >",
+            action = function()
+                local ne = require("name_entry")
+                ne.score = finalScore
+                scene.replace(ne, transition.fadeThroughBlack(0.6))
+            end,
+        }
+    end
+    return {
+        x = 0, y = 110, w = 240, h = 56,
+        label  = restartLabel,
+        action = newRun,
+    }
+end
+
 local function enterAllDone()
     state.mode = STATE_ALL_DONE
     -- Session-end joker bonus: 50 per unused joker. Per-level was wrong
@@ -312,14 +336,14 @@ local function enterAllDone()
         }
     end
 
+    -- Final tally the board sees: the live score plus the joker bonus that
+    -- the dialog count-up is about to fold in.
+    local finalScore = state.score + jokerBonus
+
     dialog.show({
         title = "RUN COMPLETE!",
         buttons = {
-            {
-                x = 0, y = 110, w = 240, h = 56,
-                label  = "Play again",
-                action = newRun,
-            },
+            endRunButton(finalScore, "Play again"),
         },
         drawBody = function(introDone, t, ax, ay)
             if not introDone then return end
@@ -344,11 +368,7 @@ local function enterGameOver()
     dialog.show({
         title = "GAME OVER",
         buttons = {
-            {
-                x = 0, y = 110, w = 240, h = 56,
-                label  = "Retry",
-                action = newRun,
-            },
+            endRunButton(state.score, "Retry"),
         },
         drawBody = function(introDone, t, ax, ay)
             if not introDone then return end
