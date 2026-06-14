@@ -19,8 +19,8 @@
 
 return {
     display = {
-        width      = 640,
-        height     = 480,
-        fullscreen = false,
+        width      = 0,
+        height     = 0,
+        fullscreen = true,
     },
 }

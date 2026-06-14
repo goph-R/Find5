@@ -29,7 +29,7 @@ There are no tests and no lint step.
 
 Run the built executable from the repo root — it reads everything under `assets/` and `scripts/` as **relative paths**. `cd build && ./find5` will fail to find assets.
 
-Flow: app boots, loads `assets.lua` (sounds/music/textures/fonts manifest), runs `scripts/main.lua`, calls `onStart()`. The starter `onStart` plays the title OGG and shows a transient HUD message. Window stays open until Esc or close-button. F2 retriggers the `jump` sound for audio sanity-check.
+Flow: app boots, loads `assets.lua` (sounds/music/textures/fonts manifest), runs `scripts/main.lua`, calls `onStart()`. The starter `onStart` plays the title OGG and shows a transient HUD message. Window stays open until the close-button (or a script-side `requestQuit()`). F2 retriggers the `jump` sound for audio sanity-check.
 
 Windows-specific: SDL 1.2's fullscreen path drops the monitor's refresh rate to 60Hz because it calls `ChangeDisplaySettings` without a frequency. `main.cpp` samples the configured desktop rate via `EnumDisplaySettings(ENUM_REGISTRY_SETTINGS)` before `SDL_Init` and re-applies it with `ChangeDisplaySettingsEx` after `SDL_SetVideoMode` when `-fullscreen` is passed. No-op on Linux.
 
@@ -103,7 +103,7 @@ Lua game code reacts to input via callback hooks (transient events) and polling 
 - `mousePos()` → x, y (virtual coords).
 - `mouseDown(button)` → bool.
 
-Esc is hardcoded in `main.cpp` as a quit kill-switch (so a buggy script can't lock the user in). The Lua `onKeyDown` still receives `"escape"` so game code can react if it wants.
+Esc is not special-cased — the Lua `onKeyDown` receives `"escape"` like any other key, and it's up to game code to decide whether it quits (e.g. via `requestQuit()`). The only built-in exits are the window close-button (`SDL_QUIT`) and a script-side `requestQuit()`.
 
 Key-name lookup in `keyDown` is a linear scan of `SDLK_FIRST..SDLK_LAST` via `SDL_GetKeyName` (no reverse map in SDL 1.2). It's ~300 strcmps per call — cheap enough for typical games but worth a small cache if a script polls hundreds of keys per frame.
 

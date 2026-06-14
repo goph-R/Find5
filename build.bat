@@ -66,7 +66,7 @@ REM ----------------------------------------------------------------
 REM  Link
 REM ----------------------------------------------------------------
 echo Linking...
-C:\Dev-Cpp\bin\g++.exe raw\obj\main.o raw\obj\lua.o raw\obj\vorbis.o -o Find5.exe -L..\SOOB-Core\vendor\lib -lmingw32 -lSDLmain -lSDL -lopengl32 -lOpenAL32
+C:\Dev-Cpp\bin\g++.exe raw\obj\main.o raw\obj\lua.o raw\obj\vorbis.o -o Find5.exe -mwindows -L..\SOOB-Core\vendor\lib -lmingw32 -lSDLmain -lSDL -lopengl32 -lOpenAL32
 if errorlevel 1 goto error
 
 REM ----------------------------------------------------------------

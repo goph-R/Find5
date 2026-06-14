@@ -80,7 +80,7 @@ REM ----------------------------------------------------------------
 REM  Link
 REM ----------------------------------------------------------------
 echo Linking...
-%GPP% %OBJDIR%\main.o %OBJDIR%\sdl_main.o %OBJDIR%\lua.o %OBJDIR%\vorbis.o -o Find5_w10.exe -L%ENGINE%\vendor_win10\lib -lmingw32 -lSDL -lopengl32 -lOpenAL32 -static-libgcc -static-libstdc++
+%GPP% %OBJDIR%\main.o %OBJDIR%\sdl_main.o %OBJDIR%\lua.o %OBJDIR%\vorbis.o -o Find5_w10.exe -mwindows -L%ENGINE%\vendor_win10\lib -lmingw32 -lSDL -lopengl32 -lOpenAL32 -static-libgcc -static-libstdc++
 if errorlevel 1 goto error
 
 REM ----------------------------------------------------------------

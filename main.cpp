@@ -234,10 +234,6 @@ int main(int argc, char *argv[])
             }
             if (event.type == SDL_KEYDOWN) {
                 SDLKey sym = event.key.keysym.sym;
-                /* Esc is a hardcoded kill-switch so a buggy Lua script
-                   can't lock the user in. Lua still sees the event so
-                   game code can react if it wants. */
-                if (sym == SDLK_ESCAPE) running = 0;
                 const char *name = SDL_GetKeyName(sym);
                 scriptCallKeyDown(&script, name ? name : "");
                 /* Fire onTextInput after onKeyDown when the key
