@@ -35,7 +35,7 @@ for /f "tokens=*" %%V in ('%GPP% -dumpversion') do set "GCC_VER=%%V"
 echo Found GCC %GCC_VER%
 echo.
 
-set "OPTS=-O2 -I%ENGINE% -I%ENGINE%\vendor_win10\include -I%ENGINE%\vendor\lua-5.1.5\src"
+set "OPTS=-O2 -DSOOB_SOFTWARE_BACKEND -I%ENGINE% -I%ENGINE%\vendor_win10\include -I%ENGINE%\vendor\lua-5.1.5\src"
 
 REM ----------------------------------------------------------------
 REM  Object output directory (gitignored)

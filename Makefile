@@ -10,7 +10,9 @@ ENGINE  = ../SOOB-Core
 LUA_SRC = $(ENGINE)/vendor/lua-5.1.5/src
 LUA_CFLAGS = -I$(LUA_SRC) -Dluaall_c -DLUA_USE_POSIX
 
-CXXFLAGS = $(shell sdl-config --cflags) -I$(ENGINE) -I$(LUA_SRC) -O2
+# -DSOOB_SOFTWARE_BACKEND compiles in the CPU rasterizer alongside GL; the
+# active backend is chosen at runtime by config.lua's display.render.
+CXXFLAGS = $(shell sdl-config --cflags) -I$(ENGINE) -I$(LUA_SRC) -O2 -DSOOB_SOFTWARE_BACKEND
 LIBS = $(shell sdl-config --libs) -lGL -lopenal
 
 OBJ = main.o lua.o vorbis.o

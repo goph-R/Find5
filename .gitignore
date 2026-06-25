@@ -16,6 +16,9 @@ stdout.txt
 stderr.txt
 ai-on-itself.txt
 
+# F12 frame dumps
+find5_shot_*.bmp
+
 # Downloaded installers
 ms3d184setup.exe
 

@@ -35,6 +35,10 @@ add_executable(Find5
 )
 target_link_libraries(Find5 ${SDL_LIBS} ${OPENGL_LIBRARIES} ${OPENAL_LIBRARY})
 
+# Compile in the CPU rasterizer alongside GL; config.lua's display.render
+# picks the active backend at runtime.
+target_compile_definitions(Find5 PRIVATE SOOB_SOFTWARE_BACKEND)
+
 # Mirror the engine's Lua modules next to the exe so shipped builds find
 # require "engine.scene" via ./scripts/?.lua without needing SOOB-Core
 # on the player's machine.

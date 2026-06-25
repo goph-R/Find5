@@ -94,6 +94,67 @@ static void applyFullscreenRefreshHz(int, int) {}
    preserved; self-guarded and a no-op on non-Win32. */
 #include "dpi.h"
 
+#ifdef SOOB_SOFTWARE_BACKEND
+/* Copy the software backbuffer to the SDL display surface and flip. On a
+   SWSURFACE this Flip is the system->VRAM copy — the real bottleneck on a P166.
+   Note: raw 32-bit copy; assumes the display surface is 0xAARRGGBB like the
+   backbuffer (true on the Win98 target). If colors look swapped on some host,
+   convert against screen->format here. */
+static void swPresent(SwCanvas *c, SDL_Surface *s)
+{
+    int bytes = c->bpp / 8;   /* 2 (RGB565) or 4 (ARGB); matches the surface */
+    if (SDL_MUSTLOCK(s)) SDL_LockSurface(s);
+    for (int y = 0; y < c->h; y++)
+        memcpy((unsigned char *)s->pixels + (size_t)y * s->pitch,
+               (unsigned char *)c->px + (size_t)y * c->w * bytes,
+               (size_t)c->w * bytes);
+    if (SDL_MUSTLOCK(s)) SDL_UnlockSurface(s);
+    SDL_Flip(s);
+}
+#endif
+
+/* ---- F12 frame dump ----
+ * Writes the just-presented frame to find5_shot_NNN.bmp next to the exe. Handy
+ * for sanity-checking software-mode colours on the real machine without a camera
+ * (e.g. confirming the 16bpp present isn't channel-swapped on a given display).
+ *
+ * Software mode: the SDL surface already holds the presented pixels, so save it
+ * directly. GL mode: the GL surface has no CPU pixels, so read the back buffer
+ * with glReadPixels (must be called BEFORE SwapBuffers) and flip it top-down. */
+static int g_shotReq = 0;
+static int g_shotNum = 0;
+
+static void saveScreenshot(SDL_Surface *screen, int w, int h, int softwareMode)
+{
+    char name[64];
+    sprintf(name, "find5_shot_%03d.bmp", ++g_shotNum);
+
+    if (softwareMode) {
+        if (SDL_SaveBMP(screen, name) == 0) conLogf("screenshot: wrote %s\n", name);
+        else conLogf("screenshot: SDL_SaveBMP failed: %s\n", SDL_GetError());
+        return;
+    }
+
+    unsigned char *px = (unsigned char *)malloc((size_t)w * h * 3);
+    if (!px) return;
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);   /* reads GL_BACK; rows bottom-up */
+    /* 24bpp surface with memory byte order R,G,B (matches glReadPixels) on LE. */
+    SDL_Surface *surf = SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 24,
+                                             0x000000FF, 0x0000FF00, 0x00FF0000, 0);
+    if (surf) {
+        if (SDL_MUSTLOCK(surf)) SDL_LockSurface(surf);
+        for (int y = 0; y < h; y++)
+            memcpy((unsigned char *)surf->pixels + (size_t)y * surf->pitch,
+                   px + (size_t)(h - 1 - y) * w * 3, (size_t)w * 3);  /* flip top-down */
+        if (SDL_MUSTLOCK(surf)) SDL_UnlockSurface(surf);
+        if (SDL_SaveBMP(surf, name) == 0) conLogf("screenshot: wrote %s\n", name);
+        else conLogf("screenshot: SDL_SaveBMP failed: %s\n", SDL_GetError());
+        SDL_FreeSurface(surf);
+    }
+    free(px);
+}
+
 int main(int argc, char *argv[])
 {
     /* Tell modern Windows we render in real pixels, before SDL touches the
@@ -112,6 +173,16 @@ int main(int argc, char *argv[])
     SCREEN_W = cfg.width;
     SCREEN_H = cfg.height;
     int fullscreen = cfg.fullscreen;
+
+#ifdef SOOB_SOFTWARE_BACKEND
+    g_renderMode = cfg.render ? RENDER_MODE_SOFTWARE : RENDER_MODE_OPENGL;
+    if (cfg.render) conLogf("Renderer: software (%d-bpp)\n", cfg.depth);
+    else            conLogf("Renderer: opengl\n");
+#else
+    if (cfg.render)
+        conLogf("config: render='software' requested but software backend not "
+                "compiled in (define SOOB_SOFTWARE_BACKEND); using OpenGL\n");
+#endif
 
     saveDesktopRefreshHz();
     srand((unsigned)time(NULL));
@@ -152,22 +223,39 @@ int main(int argc, char *argv[])
     MusicLibrary musLib;
     musicLibInit(&musLib);
 
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    /* No depth buffer needed for pure 2D, but a tiny one doesn't hurt
-       and keeps the SDL/GL attribute set close to typical defaults. */
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    /* Request vsync before SDL_SetVideoMode (SDL 1.2.10+). Only a request:
-       some old drivers ignore it and there's no read-back in 1.2, so we just
-       log what we asked for. */
-    SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, cfg.vsync);
-    conLogf("VSync: %s\n", cfg.vsync ? "on (requested)" : "off");
+    SDL_Surface *screen = 0;
+#ifdef SOOB_SOFTWARE_BACKEND
+    if (g_renderMode == RENDER_MODE_SOFTWARE) {
+        /* No GL context: a plain shadow surface plus a CPU backbuffer. */
+        Uint32 vflags = SDL_SWSURFACE;
+        if (fullscreen) vflags |= SDL_FULLSCREEN;
+        screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, cfg.depth, vflags);
+        if (screen && !swCanvasInit(&g_swCanvas, SCREEN_W, SCREEN_H, cfg.depth)) {
+            conLogf("software: backbuffer alloc failed\n");
+            sndShutdown(&snd);
+            SDL_Quit();
+            return 1;
+        }
+    } else
+#endif
+    {
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        /* No depth buffer needed for pure 2D, but a tiny one doesn't hurt
+           and keeps the SDL/GL attribute set close to typical defaults. */
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        /* Request vsync before SDL_SetVideoMode (SDL 1.2.10+). Only a request:
+           some old drivers ignore it and there's no read-back in 1.2, so we just
+           log what we asked for. */
+        SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, cfg.vsync);
+        conLogf("VSync: %s\n", cfg.vsync ? "on (requested)" : "off");
 
-    Uint32 videoFlags = SDL_OPENGL;
-    if (fullscreen) videoFlags |= SDL_FULLSCREEN;
-    SDL_Surface *screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, 32, videoFlags);
+        Uint32 videoFlags = SDL_OPENGL;
+        if (fullscreen) videoFlags |= SDL_FULLSCREEN;
+        screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, 32, videoFlags);
+    }
     if (!screen) {
         conLogf("SDL_SetVideoMode failed: %s\n", SDL_GetError());
         sndShutdown(&snd);
@@ -181,14 +269,20 @@ int main(int argc, char *argv[])
     SDL_WM_SetCaption("Find5", NULL);
 
     /* 2D GL state. uiBegin/uiEnd manages its own state per-frame, but
-       set sensible defaults so non-UI draws also behave. */
-    glViewport(0, 0, SCREEN_W, SCREEN_H);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
+       set sensible defaults so non-UI draws also behave. Skipped entirely in
+       software mode — there is no GL context to configure. */
+#ifdef SOOB_SOFTWARE_BACKEND
+    if (g_renderMode != RENDER_MODE_SOFTWARE)
+#endif
+    {
+        glViewport(0, 0, SCREEN_W, SCREEN_H);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_LIGHTING);
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
+    }
 
     UiState ui;
     uiInit(&ui, SCREEN_W, SCREEN_H);
@@ -234,6 +328,7 @@ int main(int argc, char *argv[])
             }
             if (event.type == SDL_KEYDOWN) {
                 SDLKey sym = event.key.keysym.sym;
+                if (sym == SDLK_F12) g_shotReq = 1;   /* dump current frame */
                 const char *name = SDL_GetKeyName(sym);
                 scriptCallKeyDown(&script, name ? name : "");
                 /* Fire onTextInput after onKeyDown when the key
@@ -280,7 +375,12 @@ int main(int argc, char *argv[])
         musicUpdate(&mus, dt);
         uiUpdateMessage(&ui, dt);
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+#ifdef SOOB_SOFTWARE_BACKEND
+        if (g_renderMode == RENDER_MODE_SOFTWARE)
+            swCanvasClear(&g_swCanvas, SW_ARGB(255, 20, 20, 31)); /* ~0.08,0.08,0.12 */
+        else
+#endif
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         uiBegin(&ui);
 
@@ -292,7 +392,17 @@ int main(int argc, char *argv[])
 
         uiEnd(&ui);
 
-        SDL_GL_SwapBuffers();
+#ifdef SOOB_SOFTWARE_BACKEND
+        if (g_renderMode == RENDER_MODE_SOFTWARE) {
+            swPresent(&g_swCanvas, screen);
+            if (g_shotReq) { saveScreenshot(screen, SCREEN_W, SCREEN_H, 1); g_shotReq = 0; }
+        } else
+#endif
+        {
+            /* GL: read the back buffer before it's swapped away. */
+            if (g_shotReq) { saveScreenshot(screen, SCREEN_W, SCREEN_H, 0); g_shotReq = 0; }
+            SDL_GL_SwapBuffers();
+        }
         SDL_Delay(1);
     }
 

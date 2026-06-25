@@ -59,7 +59,7 @@ REM  Compile main.  -I..\SOOB-Core lets #include "script.h" etc.
 REM  resolve to the shared headers.
 REM ----------------------------------------------------------------
 echo Compiling main...
-C:\Dev-Cpp\bin\g++.exe -I..\SOOB-Core -I..\SOOB-Core\vendor\include -I..\SOOB-Core\vendor\lua-5.1.5\src -O2 -c main.cpp -o raw\obj\main.o
+C:\Dev-Cpp\bin\g++.exe -I..\SOOB-Core -I..\SOOB-Core\vendor\include -I..\SOOB-Core\vendor\lua-5.1.5\src -O2 -DSOOB_SOFTWARE_BACKEND -c main.cpp -o raw\obj\main.o
 if errorlevel 1 goto error
 
 REM ----------------------------------------------------------------

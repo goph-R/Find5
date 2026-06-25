@@ -29,7 +29,7 @@ There are no tests and no lint step.
 
 Run the built executable from the repo root — it reads everything under `assets/` and `scripts/` as **relative paths**. `cd build && ./find5` will fail to find assets.
 
-Flow: app boots, loads `assets.lua` (sounds/music/textures/fonts manifest), runs `scripts/main.lua`, calls `onStart()`. The starter `onStart` plays the title OGG and shows a transient HUD message. Window stays open until the close-button (or a script-side `requestQuit()`). F2 retriggers the `jump` sound for audio sanity-check.
+Flow: app boots, loads `assets.lua` (sounds/music/textures/fonts manifest), runs `scripts/main.lua`, calls `onStart()`. The starter `onStart` plays the title OGG and shows a transient HUD message. Window stays open until the close-button (or a script-side `requestQuit()`). F2 retriggers the `jump` sound for audio sanity-check. F12 dumps the current frame to `find5_shot_NNN.bmp` next to the exe (works in both GL and software renderers) — handy for checking software-mode colours on the real machine; the counter resets each run, so copy shots out if you want to keep a set.
 
 Windows-specific: SDL 1.2's fullscreen path drops the monitor's refresh rate to 60Hz because it calls `ChangeDisplaySettings` without a frequency. `main.cpp` samples the configured desktop rate via `EnumDisplaySettings(ENUM_REGISTRY_SETTINGS)` before `SDL_Init` and re-applies it with `ChangeDisplaySettingsEx` after `SDL_SetVideoMode` when `-fullscreen` is passed. No-op on Linux.
 
