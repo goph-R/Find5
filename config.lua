@@ -33,9 +33,9 @@
 
 return {
     display = {
-        width      = 0,
-        height     = 0,
-        fullscreen = true,
+        width      = 1024,
+        height     = 768,
+        fullscreen = false,
         render     = "opengl",   -- or "software"
         depth      = 32,         -- or 16
     },
