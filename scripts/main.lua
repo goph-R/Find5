@@ -692,7 +692,7 @@ local widget = require "engine.widget"
 local root = widget.panel({ x = 0, y = 0 })
 
 -- Layer 1: portrait frames + portraits. Painted first; the dynamic
--- ellipses / popups / overlays paint on top in gameRender.
+-- ellipses / popups / overlays paint on top in gameScene:render.
 root:add(widget.image{ x = IMG_LEFT_X,      y = IMG_Y,     region = "image_bg" })
 root:add(widget.image{ x = IMG_LEFT_X + 1,  y = IMG_Y + 1, region = "image_1a" })
 root:add(widget.image{ x = IMG_RIGHT_X,     y = IMG_Y,     region = "image_bg" })
@@ -833,8 +833,8 @@ local STAR_SCALE_DURATION = 0.5
 -- once), a random spin, and a direction confined to its OWN even slice of
 -- the circle (360/COUNT degrees each) with a random angle inside that slice
 -- — so they fan out roughly evenly instead of clumping. Pure visual fluff:
--- anim-driven widgets on state.particles, ticked + culled in gameUpdate,
--- drawn in gameRender.
+-- anim-driven widgets on state.particles, ticked + culled in
+-- gameScene:update, drawn in gameScene:render.
 local BURST_COUNT      = 5
 local BURST_DUR_MIN    = 0.45
 local BURST_DUR_MAX    = 0.85
@@ -936,9 +936,16 @@ end
 -- Hooks are routed through engine.scene. The menu scene is the first
 -- thing pushed; clicking its "Start game" button calls
 -- find5StartGame(), which replaces the menu with the gameScene
--- defined at the bottom of this file.
+-- defined just below.
 
-local function gameUpdate(dt)
+-- ---- Scene wrapper --------------------------------------------------------
+-- The game runs as one scene; the title screen runs as another. These
+-- methods were previously top-level on_* hooks (then thin delegators to
+-- local game* functions); the bodies now live directly on the scene table.
+-- enter / exit are defined just after render, below.
+gameScene = { root = root }
+
+function gameScene:update(dt)
     -- Dialog animations must always run — they own the intro/outro
     -- timing, including the deferred button action.
     dialog.update(dt)
@@ -1043,7 +1050,7 @@ local function gameUpdate(dt)
     root:update(dt)
 end
 
-local function gameMouseDown(x, y, button)
+function gameScene:mouseDown(x, y, button)
     if button ~= 1 then return end
 
     -- An active dialog owns clicks entirely — its button hit-tests run
@@ -1051,7 +1058,7 @@ local function gameMouseDown(x, y, button)
     -- swallowed (no fall-through to game logic underneath the modal).
     -- PAUSE / LEVEL_COMPLETE / GAME_OVER / ALL_DONE all route through
     -- here. NB: widget buttons fire onClick on RELEASE, so we also
-    -- need to route mouseUp (see gameMouseUp) and mouseMove (for
+    -- need to route mouseUp (see gameScene:mouseUp) and mouseMove (for
     -- hover feedback while the dialog is up).
     if dialog.isActive() then
         dialog.handleMouseDown(x, y, button)
@@ -1088,7 +1095,7 @@ end
 -- — we'd otherwise lose the scene's auto-forward path by declaring
 -- mouseUp / mouseMove on gameScene at all.
 
-local function gameMouseUp(x, y, button)
+function gameScene:mouseUp(x, y, button)
     if dialog.isActive() then
         dialog.handleMouseUp(x, y, button)
         return
@@ -1096,7 +1103,7 @@ local function gameMouseUp(x, y, button)
     root:mouseUp(x, y, button)
 end
 
-local function gameMouseMove(x, y, dx, dy)
+function gameScene:mouseMove(x, y, dx, dy)
     if dialog.isActive() then
         dialog.handleMouseMove(x, y, dx, dy)
         return
@@ -1115,7 +1122,7 @@ local function drawCountdown()
     for _, w in ipairs(cd) do w:draw() end
 end
 
-local function gameRender()
+function gameScene:render()
     -- ---- Backdrop: blurred color summary of the left portrait. ----
     -- Multiply by root.alpha so the blur fades in / out with the rest
     -- of the scene during a transition — otherwise it pops in at full
@@ -1124,7 +1131,7 @@ local function gameRender()
 
     -- HUD panel — portrait frames + portraits, timebar, stars, text
     -- labels, pause + joker buttons. Sync_hud (called at end of
-    -- gameUpdate) refreshes labels / regions / fills / press flags
+    -- gameScene:update) refreshes labels / regions / fills / press flags
     -- from game state. Paints before the dynamic overlays below so
     -- ellipses and popups land on top of the portraits.
     root:draw()
@@ -1199,13 +1206,6 @@ local function gameRender()
     drawCountdown()
 end
 
--- ---- Scene wrapper --------------------------------------------------------
--- The game runs as one scene; the title screen runs as another. Bodies
--- of gameUpdate / gameMouseDown / gameRender are unchanged from when
--- they were top-level on_* hooks — only the dispatch path changed.
-
-gameScene = { root = root }
-
 function gameScene:enter()
     -- First entry (from find5StartGame) needs nothing: newRun already set
     -- up level 1. Re-entry via the Next-level fade sets pendingAdvance, so
@@ -1234,12 +1234,6 @@ function gameScene:enter()
     -- this the stars would snap away only after the fade-in finished.
     syncHud()
 end
-
-function gameScene:update(dt)     gameUpdate(dt)         end
-function gameScene:mouseDown(x, y, b) gameMouseDown(x, y, b) end
-function gameScene:mouseUp(x, y, b)   gameMouseUp(x, y, b)   end
-function gameScene:mouseMove(x, y, dx, dy) gameMouseMove(x, y, dx, dy) end
-function gameScene:render()        gameRender()           end
 
 -- Clean up the dialog state when leaving the game scene. The Yes /
 -- Exit-to-main-menu path uses skipOutro on the dialog button — it
