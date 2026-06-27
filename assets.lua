@@ -11,7 +11,12 @@
 
 return {
     sounds = {
-		placholder  = "assets/sounds/jump.wav",
+		dialog_open  = "assets/sounds/dialog-open.wav",
+		dialog_close = "assets/sounds/dialog-close.wav",
+        count_three  = "assets/sounds/count-three.wav",
+        count_two    = "assets/sounds/count-two.wav",
+        count_one    = "assets/sounds/count-one.wav",
+        count_go     = "assets/sounds/count-go.wav",
         -- Random-pick groups: name = { "path1", "path2", ... } picks a
         -- uniformly-random non-repeating variant each call.
         -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },

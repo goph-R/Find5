@@ -219,15 +219,22 @@ local function buildCountdown()
             region = n.region, scale = 2.0, alpha = 0.0,
             action = anim.sequence{
                 anim.delay((i - 1) * half),
-                anim.parallel{                                       -- appear: 2→1, 0→1
-                    anim.scaleTo(1.0, half, anim.easeInOutExpo),
-                    anim.fadeTo (1.0, half, anim.easeInOutExpo),
-                },
-                anim.call(function() soundPlay(n.sound) end),        -- shout at the midpoint
-                anim.parallel{                                       -- vanish: 1→0, 1→0
-                    anim.scaleTo(0.0, half, anim.easeInOutExpo),
-                    anim.fadeTo (0.0, half, anim.easeInOutExpo),
-                },
+                anim.parallel{
+                    anim.sequence{
+                        anim.delay(0.5),
+                        anim.call(function() soundPlay(n.sound) end),        -- shout at the beginning with delay
+                    },
+                    anim.sequence{
+                        anim.parallel{                                       -- appear: 2→1, 0→1
+                            anim.scaleTo(1.0, half, anim.easeInOutExpo),
+                            anim.fadeTo (1.0, half, anim.easeInOutExpo),
+                        },
+                        anim.parallel{                                       -- vanish: 1→0, 1→0
+                            anim.scaleTo(0.0, half, anim.easeInOutExpo),
+                            anim.fadeTo (0.0, half, anim.easeInOutExpo),
+                        },
+                    },
+                }
             },
             draw = function(self)
                 if self.alpha <= 0 then return end
@@ -237,10 +244,18 @@ local function buildCountdown()
                 })
             end,
         }
-        -- Last number to finish ends the countdown: "go", release, unlock.
+        -- Last number to finish ends the countdown. Append a final beat so
+        -- "go" shouts AFTER "one" has vanished (3, 2, 1, GO!) rather than
+        -- overlapping the count, then release + unlock on onActionDone.
         if i == #COUNTDOWN_NUMBERS then
+            w.action = anim.parallel{
+                w.action,
+                anim.sequence{
+                    anim.delay(#COUNTDOWN_NUMBERS + 0.5),
+                    anim.call(function() soundPlay(COUNTDOWN_GO_SOUND) end)
+                },
+            }
             w.onActionDone = function()
-                soundPlay(COUNTDOWN_GO_SOUND)
                 state.countdown = nil
                 state.mode      = STATE_PLAYING
             end
