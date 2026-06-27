@@ -15,9 +15,13 @@ output.txt
 stdout.txt
 stderr.txt
 ai-on-itself.txt
+find5.log
 
 # F12 frame dumps
 find5_shot_*.bmp
+
+# Scratch screenshots
+screenshot.png
 
 # Downloaded installers
 ms3d184setup.exe
