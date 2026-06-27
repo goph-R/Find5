@@ -137,11 +137,10 @@ function highscoresScene:exit()
 end
 
 function highscoresScene:render()
-    -- Marble backdrop, stretched to the visible canvas (matches menu.lua).
-    local vw, vh = viewSize()
-    drawRegion("menu_bg", -vw / 2, -vh / 2, {
-        scaleX = vw / 512, scaleY = vh / 512,
-    })
+    -- Marble backdrop — cover-fit the 512² texture to the visible canvas,
+    -- exactly like menu.lua (preserves aspect, crops overflow) so non-4:3
+    -- windows don't distort it.
+    drawBg("menu_bg")
 
     -- Translucent slab behind the list for legibility over the marble.
     drawQuad(PANEL_X, PANEL_TOP, PANEL_W, PANEL_H, { color = { 0, 0, 0, 0.45 } })

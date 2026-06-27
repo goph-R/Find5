@@ -77,10 +77,8 @@ function M:enter()
 end
 
 function M:render()
-    local vw, vh = viewSize()
-    drawRegion("menu_bg", -vw / 2, -vh / 2, {
-        scaleX = vw / 512, scaleY = vh / 512,
-    })
+    -- Marble backdrop — cover-fit to the visible canvas, like menu.lua.
+    drawBg("menu_bg")
     drawQuad(PANEL_X, PANEL_TOP, PANEL_W, PANEL_H, { color = { 0, 0, 0, 0.45 } })
 
     drawText("NEW HIGH SCORE!", 0, -110, {
