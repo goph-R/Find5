@@ -11,15 +11,15 @@
 
 return {
     sounds = {
+        -- Random-pick groups: name = { "path1", "path2", ... } picks a
+        -- uniformly-random non-repeating variant each call.
+        -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },
 		dialog_open  = "assets/sounds/dialog-open.wav",
 		dialog_close = "assets/sounds/dialog-close.wav",
         count_three  = "assets/sounds/count-three.wav",
         count_two    = "assets/sounds/count-two.wav",
         count_one    = "assets/sounds/count-one.wav",
         count_go     = "assets/sounds/count-go.wav",
-        -- Random-pick groups: name = { "path1", "path2", ... } picks a
-        -- uniformly-random non-repeating variant each call.
-        -- steps = { "assets/sounds/step1.wav", "assets/sounds/step2.wav" },
     },
 
     -- Streaming Ogg Vorbis tracks for musicPlay(name [, fade [, loop]]).
@@ -29,14 +29,14 @@ return {
     },
 
     textures = {
-        menu_ui    = "assets/textures/menu_ui.png",
-        menu_bg    = "assets/textures/menu_bg.png",
-        game_ui    = "assets/textures/game_ui.png",
-		dialog_bg  = "assets/textures/dialog_bg.png",
+        menu_ui    = "assets/textures/menu-ui.png",
+        menu_bg    = "assets/textures/menu-bg.png",
+        game_ui    = "assets/textures/game-ui.png",
+		dialog_bg  = "assets/textures/dialog-bg.png",
 		categories = "assets/textures/categories.png",
 		numbers    = "assets/textures/numbers.png",
-        image_1a   = "assets/textures/image_1a.png",
-        image_1b   = "assets/textures/image_1b.png",
+        image_1a   = "assets/textures/image-1a.png",
+        image_1b   = "assets/textures/image-1b.png",
     },
 
     -- Regions are sub-rectangles of textures, addressed by name from
