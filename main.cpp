@@ -42,6 +42,7 @@ static void conLogf(const char *fmt, ...);
 #include "asset_registry.h"
 #include "script.h"
 #include "config.h"
+#include "app_info.h"
 
 static void conLogf(const char *fmt, ...)
 {
@@ -169,6 +170,11 @@ int main(int argc, char *argv[])
     Config cfg = configLoadDefaults();
     configLoadFromFile(&cfg, "config.lua");
     configApplyArgs(&cfg, argc, argv);
+
+    /* Who we are: window title and save-file stem come from app.lua, the same
+       file the web and Android hosts read. */
+    AppInfo app = appInfoLoadDefaults();
+    appInfoLoadFromFile(&app, "app.lua");
     configClamp(&cfg);
     SCREEN_W = cfg.width;
     SCREEN_H = cfg.height;
@@ -266,7 +272,7 @@ int main(int argc, char *argv[])
     if (fullscreen) applyFullscreenRefreshHz(SCREEN_W, SCREEN_H);
 
     SDL_EnableUNICODE(1);
-    SDL_WM_SetCaption("Find5", NULL);
+    SDL_WM_SetCaption(app.name, NULL);
 
     /* 2D GL state. uiBegin/uiEnd manages its own state per-frame, but
        set sensible defaults so non-UI draws also behave. Skipped entirely in
@@ -294,13 +300,15 @@ int main(int argc, char *argv[])
     TexBlurCache blurCache;
     texBlurInit(&blurCache);
     ScriptSystem script;
-    /* Per-user persistence path: AppData\Find5\find5.dat (Windows) or
-       ~/.config/Find5/find5.dat (Unix). Falls back to "find5.dat" next
-       to the exe when no user-config dir is reachable (e.g. Win98).
-       optPath is static so the buffer outlives ScriptSystem's borrowed
-       pointer. */
+    /* Per-user persistence path, named from app.lua: AppData\Find5\find5.dat
+       (Windows) or ~/.config/Find5/find5.dat (Unix). Falls back to
+       "find5.dat" next to the exe when no user-config dir is reachable
+       (e.g. Win98). optPath is static so the buffer outlives ScriptSystem's
+       borrowed pointer. */
     static char optPath[512];
-    scriptResolveConfigPath("Find5", "find5.dat", optPath, sizeof(optPath));
+    char optName[APP_ID_MAX + 8];
+    appInfoOptFileName(&app, optName, sizeof(optName));
+    scriptResolveConfigPath(app.name, optName, optPath, sizeof(optPath));
     scriptInit(&script, &ui, &snd, &sndLib, &mus, &musLib, &assetReg,
                &texCache, &blurCache, optPath);
     scriptLoadAssets(&script, "assets.lua");
