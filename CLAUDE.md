@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Find5 is a minimal 2D game engine starter forked from SDLFun. Same retro target span: **Windows 98** (Dev-C++ / MinGW 3.4, SDL 1.2, fixed-function OpenGL, OpenAL Soft 1.9.563) up to modern Linux/Windows. The "runs on a Pentium 4" constraint is deliberate — no C++11 features, no shaders, no modern GL, header-only modules, static-libgcc linking for the Win10 build.
+Find5 is a 2D spot-the-difference game built on SOOB-Core. Same retro target span: **Windows 98** (Dev-C++ / MinGW 3.4, SDL 1.2, fixed-function OpenGL, OpenAL Soft 1.9.563) up to modern Linux/Windows. The "runs on a Pentium 4" constraint is deliberate — no C++11 features, no shaders, no modern GL, header-only modules, static-libgcc linking for the Win10 build.
 
 **Minimum GPU: GeForce 4 MX 440 32MB.** DX7-class, 2 TMUs, 32-bit color, GL 1.3, no programmable shaders.
 
@@ -12,7 +12,7 @@ Compared to SDLFun (the parent project), this fork removes: Bullet physics, FPS 
 
 ## Build commands
 
-There are **four** independent build systems, each for a different target. They all compile `main.cpp` + Lua + stb_vorbis.
+There are **four** build systems, each for a different target. They all compile `main.cpp` + Lua + stb_vorbis. Three of them are now one-line stubs over shared fragments in `../SOOB-Core/build/` — change the shared fragment, not the stub. The Win98 `build.bat` is a deliberate full copy (COMMAND.COM can't safely `call` a shared script); its one per-game line is `set NAME=Find5`.
 
 | Target | Command | Output |
 |---|---|---|
@@ -21,7 +21,7 @@ There are **four** independent build systems, each for a different target. They 
 | Windows 10 (portable WinLibs MinGW in `vendor_win10/`) | `build_win10.bat` | `Find5_w10.exe` |
 | CMake | `mkdir build && cd build && cmake .. && make` — add `-DUSE_VENDOR_SDL=ON` to use vendored SDL | `Find5` |
 
-Audio is OpenAL 1.1 / OpenAL Soft via the header-only wrapper in `sound.h`. The repo vendors `OpenAL32.dll` (1.25.1, used on Win10) — for the Win98 target, swap in `OpenAL32-win98.dll` (1.9.563, the only release tested working on Win98) and rename it to `OpenAL32.dll` next to the exe.
+Audio is OpenAL 1.1 / OpenAL Soft via the header-only wrapper in `sound.h`. The runtime DLLs are **no longer tracked here** — `SDL.dll` and `OpenAL32.dll` live in `../SOOB-Core/vendor/` and both Windows build scripts copy them next to the exe. For the Win98 target, OpenAL Soft 1.9.563 is the only release tested working; put it next to the exe as `OpenAL32.dll` on that machine.
 
 There are no tests and no lint step.
 
@@ -56,25 +56,29 @@ This is enough to confirm "did my Lua syntax compile, did `require` resolve, did
 
 ## Architecture
 
-### Header-only modules included from main.cpp
+### The host lives in SOOB-Core
 
-The whole engine is `main.cpp` plus header-only modules with `static` functions. Include order in `main.cpp` matters — `script.h` depends on `ui.h`, `sound.h`, `music.h`, and `asset_registry.h` already being included.
+`main.cpp` is **three lines of code**: it calls `soobRun()` from `../SOOB-Core/soob_main.h`, which owns SDL/GL boot, the 2D frame loop, audio, the F12 screenshot, `app.lua` identity and shutdown. Find5 registers no native bindings (`find5StartGame` / `find5RequestQuit` are pure-Lua globals), so it passes `0` for the `SoobApp`.
+
+`soob_main.h` is a whole-program header: it includes the engine modules in the order they require, forward-declares `conLogf` before them and defines it after. Don't reintroduce a per-game frame loop or a second `conLogf` here.
+
+The engine modules themselves are still header-only `static` functions compiled as one TU:
 
 - `texture.h` — PNG loader (wraps `stb_image` from `vendor/stb/stb_image.h`; the `STB_IMAGE_IMPLEMENTATION` lives here, so any other module that needs `stbi_load` must be included after texture.h). `loadTextureExA(path, wrapMode, keepAlpha)` is the single entry point. Paired with a `TexCache` keyed by `(path, wrapMode, keepAlpha)`.
-- `ui.h` — 2D/HUD primitives. Draws on a **virtual canvas**: 540 units tall, width scales with aspect ratio, origin at screen center with Y growing down. The 2D engine renders entirely within `uiBegin`/`uiEnd` — calls between them assume ortho-mode GL state (depth off, blend on, GL_MODULATE). `uiQuad` (flat color), `uiIcon` (textured), `uiText` (BMFont + 8x8 fallback). Sprite drawing in this engine is just `uiIcon` with a loaded texture.
+- `ui.h` — 2D/HUD primitives. Draws on a **virtual canvas**: 480 units tall, width scales with aspect ratio, origin at screen center with Y growing down. The 2D engine renders entirely within `uiBegin`/`uiEnd` — calls between them assume ortho-mode GL state (depth off, blend on, GL_MODULATE). `uiQuad` (flat color), `uiIcon` (textured), `uiText` (BMFont + 8x8 fallback). Sprite drawing in this engine is just `uiIcon` with a loaded texture.
 - `sound.h` — OpenAL wrapper. `sndInit` opens the device, `sndLoadWav` reads a 16-bit PCM WAV, `SoundLibrary` is the named registry (groups of variants picked randomly), `sndPlay` fires on a free source.
 - `music.h` — Streaming Ogg Vorbis via stb_vorbis (compiled as its own C TU in `vorbis.o`). `MusicLibrary` is a name→path map; files open lazily on `musicPlay`. Crossfade-capable across 2 simultaneous tracks. Call `musicUpdate(&mus, dt)` once per frame.
 - `asset_registry.h` — name → path lookup for textures (and unused model slots inherited from SDLFun). `assets.lua` populates it via `scriptLoadAssets`.
 - `script.h` — Lua 5.1 glue. `ScriptSystem` holds the `lua_State` plus borrowed pointers to UiState/SoundSystem/SoundLibrary/MusicSystem/MusicLibrary/AssetRegistry/TexCache. Bindings exposed to Lua: `uiShowMessage`, `soundPlay`, `musicPlay`, `musicStop`, `musicVolume`, `keyDown`, `mousePos`, `mouseDown`, `drawRegion`, `drawText`, `drawEllipse`, `optSet`, `optGet`, `optSave`, `optLoad`. Lua globals set at init: `ALIGN_LEFT/CENTER/RIGHT/TOP/MIDDLE/BOTTOM`, `FLIP_H/FLIP_V`. `scriptLoadAssets` walks the manifest's `sounds` / `music` / `textures` / `fonts` / `regions` subtables and registers each. `scriptCall(s, "onStart")` invokes a nullary global Lua function if defined; `scriptCallUpdate` / `scriptCallKeyDown` / `scriptCallKeyUp` / `scriptCallMouseDown` / `scriptCallMouseUp` / `scriptCallMouseMove` / `scriptCallRender` call the corresponding `on_*` hooks. Missing hooks are no-ops. Two-phase `scriptBeginHook`/`scriptEndHook` is exposed for callers that need to push custom argument types. Reusable options-table helpers (`scrOptfieldNum/int/str/color`) for any binding that wants `{ k = v }` style args. The options store auto-loads from `find5.dat` during `scriptInit` (see "Persistence" below).
 - `math.h` — Vec2/Vec3 type definitions. Engine-wide API boundary types.
 
-`main.cpp` defines `conLogf` as a printf wrapper near the top (forward-declared before any module include so headers can call it). This replaces SDLFun's dev-console scrollback — Find5's "console" is just stdout.
+`conLogf` is defined by `soob_main.h` as a printf wrapper — Find5's "console" is just stdout. A game that wants real scrollback defines `SOOB_CUSTOM_CONLOG` and supplies its own.
 
 ### Rendering pipeline
 
 There is no 3D pipeline. Each frame:
 1. `glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)`
-2. `uiBegin(&ui)` — sets ortho projection (center origin, Y-down, 540-unit virtual height), disables depth/lighting/cull, enables alpha blend.
+2. `uiBegin(&ui)` — sets ortho projection (center origin, Y-down, 480-unit virtual height), disables depth/lighting/cull, enables alpha blend.
 3. Draw calls — `uiIcon`, `uiText`, `uiQuad`, `uiBar` in any order.
 4. `uiEnd(&ui)` — pops projection, restores depth/cull state.
 5. `SDL_GL_SwapBuffers()`.
@@ -160,7 +164,7 @@ drawEllipse(cx, cy, rx, ry, {
 
 ### Canvas size
 
-`UI_VIRTUAL_H = 480` for Find5 — matches the 4:3 / 640×480 game design target so one source pixel maps 1:1 to one virtual unit at the reference resolution. If you fork the engine for a different art scale, change that constant in `ui.h` (everything else in the renderer derives from it).
+`UI_VIRTUAL_H = 480` for Find5 — matches the 4:3 / 640×480 game design target so one source pixel maps 1:1 to one virtual unit at the reference resolution. It is `#ifndef`-guarded in `ui.h`, so a game overrides it by `#define`-ing it *before* `#include "soob_main.h"` (see the commented line in `main.cpp`). Find5 uses the default.
 
 ### Persistence
 
@@ -177,6 +181,23 @@ local sound = optGet("sound_on", true)   -- default applies if unset (forward-co
 Auto-loaded by `scriptInit` before the entry script runs, so options are ready at `onStart`. `optLoad()` can be called manually to revert to last-saved state. Atomic save via write-to-tmp + rename. The serializer (`opt_writeValue` / `opt_writeTable` in `script.h`) handles nested tables, escapes strings, detects array-shaped tables for compact output, brackets non-identifier and Lua-keyword keys, and caps recursion depth at 16 to avoid cycles. Functions / userdata / threads / mixed-type keys are silently skipped — not persistable.
 
 The file format is `return { ... }` and is loaded via `luaL_loadfile` + `lua_pcall` on the C side (bypassing the user-side `dofile` ban). Corruption falls back to empty options with a log message; it never crashes.
+
+### Lua module split
+
+`scripts/engine/` is mirrored from SOOB-Core at build time (gitignored). Find5's
+own `scripts/` holds the game: `main.lua`, `menu.lua`, `levels.lua`,
+`scores.lua`, `highscores.lua`, `name_entry.lua`.
+
+`scripts/dialog.lua` is the odd one out — a **28-line theme shim**. The dialog
+machinery (drop-in bounce, dim backdrop, `pendingAction` / `replace` /
+`skipOutro`) now lives in `engine.dialog`; the shim calls `dialog.setDefaults`
+to name Find5's marble artwork and returns the engine module, so every
+`require "dialog"` and all 22 call sites are unchanged. A spec's `height` is
+still the marble **body** height — that's the `top_bottom` background kind, and
+the total dialog height is body + the base strip.
+
+Art-specific dialog changes belong in the shim; behavioural ones in
+`../SOOB-Core/scripts/engine/dialog.lua`.
 
 ## Lua naming convention
 
@@ -208,4 +229,5 @@ lives in `../SOOB-Core/CLAUDE.md`.
 - **No shaders.** Fixed-function only.
 - **Assets are relative-pathed.** Don't add `chdir` calls or absolute-path asset lookups.
 - **Header-only modules with `static` functions.** Don't split a module into .h/.cpp — every target compiles a single TU (`main.cpp`) plus Lua plus stb_vorbis. If you add a new module, follow the header-only `static` convention.
-- **Forward-declare conLogf before any module include.** Every engine header calls it; main.cpp provides the printf-wrapper definition after the includes.
+- **Don't add host code to main.cpp.** The loop belongs in `../SOOB-Core/soob_main.h` so every 2D game gets the fix. Native Lua bindings go through `SoobApp.onRegister`.
+- **`scripts/engine/` is generated** — copied from SOOB-Core on every build and gitignored. Edit the source there. Note `script.h` searches `./scripts/` *before* `../SOOB-Core/scripts/`, so a stale mirror silently shadows the engine copy; re-run `make` after changing an engine module.

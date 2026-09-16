@@ -2,6 +2,16 @@
 *.o
 *.exe
 find5
+
+# Runtime DLLs — copied next to the exe from ../SOOB-Core/vendor* by the
+# Windows build scripts, so this repo doesn't carry its own ~4.7MB copy.
+SDL.dll
+OpenAL32.dll
+libwinpthread-1.dll
+
+# Not usable: a 64-bit Creative Labs router DLL, not OpenAL Soft. Kept out of
+# the way rather than shipped. See ../SOOB-Core/vendor_win10/README.md.
+OpenAL32-win10*.dll
 build/
 raw/obj/
 dist/

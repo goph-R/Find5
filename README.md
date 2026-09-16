@@ -2,7 +2,7 @@
 
 A 2D spot-the-difference game targeting everything from Windows 98 (Pentium 4, SDL 1.2, fixed-function OpenGL) through modern Linux and Windows.
 
-The shared engine — audio, scripting, 2D rendering, asset registry — lives in [**goph-R/SOOB-Core**](https://github.com/goph-R/SOOB-Core) and is also consumed by [goph-R/SOOB-Engine](https://github.com/goph-R/SOOB-Engine) (the 3D FPS). Find5 itself is just `main.cpp` + Lua scripts + assets.
+The shared engine — the C host, audio, scripting, 2D rendering, asset registry, and the Lua widget/scene/dialog modules — lives in [**goph-R/SOOB-Core**](https://github.com/goph-R/SOOB-Core), and is also consumed by [goph-R/SOOB-Engine](https://github.com/goph-R/SOOB-Engine) (the 3D FPS) and [goph-R/SOOB-Template](https://github.com/goph-R/SOOB-Template) (the starter for a new 2D game). Find5 itself is Lua scripts + assets: its `main.cpp` is three lines calling `soobRun()`, and three of its four build files are one-line stubs over `../SOOB-Core/build/`.
 
 ## Depends on SOOB-Core
 
@@ -19,7 +19,7 @@ Win98/
 git clone git@github.com:goph-R/SOOB-Core.git
 ```
 
-Build scripts add `-I../SOOB-Core/` so `#include "script.h"` etc. resolve into the shared engine. Engine-side Lua modules (e.g. `engine.scene`) are copied next to the .exe at build time.
+Build scripts add `-I../SOOB-Core/` so `#include "soob_main.h"` resolves into the shared engine. Engine-side Lua modules (`engine.scene`, `engine.widget`, `engine.animation`, `engine.transition`, `engine.dialog`) and the runtime `SDL.dll` / `OpenAL32.dll` are copied next to the exe at build time — this repo no longer tracks them.
 
 ## Building
 

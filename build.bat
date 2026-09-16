@@ -1,6 +1,9 @@
 @echo off
 
-echo === Find5 Win98/Dev-C++ Build ===
+REM  The one per-game line in this file.
+set NAME=Find5
+
+echo === %NAME% Win98/Dev-C++ Build ===
 echo.
 
 REM ----------------------------------------------------------------
@@ -66,8 +69,19 @@ REM ----------------------------------------------------------------
 REM  Link
 REM ----------------------------------------------------------------
 echo Linking...
-C:\Dev-Cpp\bin\g++.exe raw\obj\main.o raw\obj\lua.o raw\obj\vorbis.o -o Find5.exe -mwindows -L..\SOOB-Core\vendor\lib -lmingw32 -lSDLmain -lSDL -lopengl32 -lOpenAL32
+C:\Dev-Cpp\bin\g++.exe raw\obj\main.o raw\obj\lua.o raw\obj\vorbis.o -o %NAME%.exe -mwindows -L..\SOOB-Core\vendor\lib -lmingw32 -lSDLmain -lSDL -lopengl32 -lOpenAL32
 if errorlevel 1 goto error
+
+REM ----------------------------------------------------------------
+REM  Runtime DLLs live in the shared engine so each game repo does
+REM  not carry its own copy. Flat `if exist` lines only -- no parens.
+REM ----------------------------------------------------------------
+if exist SDL.dll goto havesdldll
+copy ..\SOOB-Core\vendor\SDL.dll . >nul
+:havesdldll
+if exist OpenAL32.dll goto haveopenaldll
+copy ..\SOOB-Core\vendor\OpenAL32.dll . >nul
+:haveopenaldll
 
 REM ----------------------------------------------------------------
 REM  Mirror SOOB-Core's Lua engine modules next to the exe so
@@ -78,8 +92,7 @@ if not exist scripts\engine mkdir scripts\engine
 copy /Y ..\SOOB-Core\scripts\engine\*.lua scripts\engine\ >nul
 
 echo.
-echo === Build successful! Run Find5.exe ===
-echo Make sure OpenAL32.dll is next to the exe or in the system directory.
+echo === Build successful! Run %NAME%.exe ===
 goto end
 
 :noheaders

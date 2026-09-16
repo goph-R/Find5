@@ -11,10 +11,12 @@
 --   orientation "landscape" | "portrait" — a hint for mobile hosts; desktop
 --               ignores it (config.lua sizes the window there)
 --   description one line, used by the web app manifest
+--   background  "#rrggbb" clear colour, used by all three hosts
 
 return {
     name        = "Find5",
     id          = "find5",
     orientation = "landscape",
     description = "Spot the difference — a SOOB-Core game.",
+    background  = "#14141f",
 }
