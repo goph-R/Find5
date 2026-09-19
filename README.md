@@ -10,13 +10,15 @@ Clone the shared engine next to this repo before building:
 
 ```
 Win98/
-├── Find5/         ← this repo
-├── SOOB-Core/     ← clone alongside
-└── SOOB-Engine/   ← optional, shares the same engine
+├── Find5/               ← this repo
+├── SOOB-Core/           ← clone alongside
+├── SOOB-Core-Android/   ← only for the APK
+└── SOOB-Engine/         ← optional, shares the same engine
 ```
 
 ```sh
 git clone git@github.com:goph-R/SOOB-Core.git
+git clone git@github.com:goph-R/SOOB-Core-Android.git   # only for the APK
 ```
 
 Build scripts add `-I../SOOB-Core/` so `#include "soob_main.h"` resolves into the shared engine. Engine-side Lua modules (`engine.scene`, `engine.widget`, `engine.animation`, `engine.transition`, `engine.dialog`) and the runtime `SDL.dll` / `OpenAL32.dll` are copied next to the exe at build time — this repo no longer tracks them.
@@ -30,6 +32,43 @@ Quick reference:
 - **Windows 98 / Dev-C++**: `build.bat` → `Find5.exe`
 - **Windows 10 / portable MinGW**: `build_win10.bat` → `Find5_w10.exe`
 - **CMake**: `mkdir build && cd build && cmake .. && make`
+- **Android**: `cd android && ./gradlew :app:assembleDebug`
+
+### Android
+
+`android/` is the APK's identity and nothing else — an `applicationId`
+(`net.dynart.find5`), a `versionCode`, a launcher icon and a manifest. No
+Kotlin, no C: the whole player (the Kotlin host, the JNI bridge, Lua 5.1 built
+by the NDK) comes from
+[SOOB-Core-Android](https://github.com/goph-R/SOOB-Core-Android) through the
+`includeBuild` in `android/settings.gradle`, so Gradle builds the library for
+you and there is nothing to build separately.
+
+```sh
+cd android
+./gradlew :app:assembleDebug     # the bundle is copied in first, automatically
+./gradlew :app:installDebug      # to a connected device
+adb logcat -s SOOB               # print(), engine messages, load errors
+```
+
+Needs the Android SDK 36 and NDK 29, plus `SOOB-Core` and `SOOB-Core-Android`
+as siblings. `android/local.properties` (`sdk.dir=…`) is yours and untracked;
+Android Studio writes it when you open the `android/` folder.
+
+`android/app/src/main/assets/` is generated and gitignored: the `syncGame` task
+copies `scripts/`, `assets/`, `assets.lua` and `app.lua` in, plus SOOB-Core's
+`scripts/engine`, so the APK builds without a desktop toolchain. `config.lua`
+is deliberately left out — every field in it is desktop-only.
+
+The game still names itself once, in `app.lua`: `name` is the launcher label,
+`background` the window and adaptive-icon colour, `id` the save file
+(`<filesDir>/find5.dat`, the desktop format) and `orientation` the screen
+orientation. Only the `applicationId` and the icon art live in `android/`.
+
+For a signed release, put an untracked `keystore.properties` next to
+`android/settings.gradle` (`storeFile` / `storePassword` / `keyAlias` /
+`keyPassword`), then `./gradlew :app:bundleRelease` for a Play AAB. Without it
+the release build still assembles, unsigned.
 
 ## Running
 

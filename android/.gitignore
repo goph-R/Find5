@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# The game bundle, copied in from the repo root by the syncGame task.
+app/src/main/assets/
+
+# Native / packaging output
+.cxx/
+*.apk
+*.aab
+output-metadata.json
+
+# Signing material — never commit
+keystore.properties
+*.jks
+*.keystore
+
+# Android Studio
+*.iml
+.idea/
+captures/
+*.hprof

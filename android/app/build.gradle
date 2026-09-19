@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// The one per-game line in this file. Everything else (SDK levels, signing,
+// noCompress, the soob-player dependency, the game-bundle sync) lives in
+// SOOB-Core-Android's gradle/soobApp.gradle, and the launcher label, the
+// window/icon colour and the screen orientation all come from ../../app.lua.
+//
+// This is a Play-facing identity: once an APK with this applicationId is
+// uploaded it can never be changed. Bump versionCode for every upload.
+//
+// There is no Kotlin here and never needs to be: SoobActivity is concrete, so
+// the manifest names net.dynart.soob.SoobActivity directly.
+def appId = 'net.dynart.find5'
+
+android {
+    namespace appId
+    defaultConfig {
+        applicationId appId
+        versionCode 1
+        versionName '0.1.0'
+    }
+}
+
+// soobPlayer comes from gradle.properties. soobApp.gradle resolves the rest of
+// the player's gradle/ scripts relative to itself, so this is the only path
+// this repo has to know.
+apply from: rootProject.file("$soobPlayer/gradle/soobApp.gradle")

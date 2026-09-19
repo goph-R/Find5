@@ -1,0 +1,26 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode = RepositoriesMode.PREFER_SETTINGS
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'Find5Android'
+
+// The player is consumed, never forked. A composite build pulls
+// net.dynart.soob:soob-player straight out of SOOB-Core-Android's own build,
+// so there is no copy of the Kotlin host, the JNI bridge or Lua in this repo —
+// the same arrangement CoolFox uses for LisaEngine.
+//
+// soobPlayer lives in gradle.properties so this path is written down once.
+includeBuild soobPlayer
+
+include ':app'

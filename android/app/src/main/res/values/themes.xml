@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- @color/soob_bg is generated from app.lua's `background` by the player's
+         generateSoobResources task, so the pre-boot window matches the
+         renderer's clear colour and the launch doesn't flash. -->
+    <style name="SoobTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/soob_bg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
