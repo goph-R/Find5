@@ -2,7 +2,7 @@
 
 A 2D spot-the-difference game targeting everything from Windows 98 (Pentium 4, SDL 1.2, fixed-function OpenGL) through modern Linux and Windows.
 
-The shared engine — the C host, audio, scripting, 2D rendering, asset registry, and the Lua widget/scene/dialog modules — lives in [**goph-R/SOOB-Core**](https://github.com/goph-R/SOOB-Core), and is also consumed by [goph-R/SOOB-Engine](https://github.com/goph-R/SOOB-Engine) (the 3D FPS) and [goph-R/SOOB-Template](https://github.com/goph-R/SOOB-Template) (the starter for a new 2D game). Find5 itself is Lua scripts + assets: its `main.cpp` is three lines calling `soobRun()`, and three of its four build files are one-line stubs over `../SOOB-Core/build/`.
+The shared engine — the C host, audio, scripting, 2D rendering, asset registry, and the Lua widget/scene/dialog modules — lives in [**goph-R/SOOB-Core**](https://github.com/goph-R/SOOB-Core), and is also consumed by [goph-R/SOOB-Engine](https://github.com/goph-R/SOOB-Engine) (the 3D FPS) and [goph-R/SOOB-Core-Template](https://github.com/goph-R/SOOB-Core-Template) (the starter for a new 2D game). Find5 itself is Lua scripts + assets: its `main.cpp` is three lines calling `soobRun()`, and three of its four build files are one-line stubs over `../SOOB-Core/build/`.
 
 ## Depends on SOOB-Core
 
